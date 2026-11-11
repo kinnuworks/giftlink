@@ -3,6 +3,7 @@ import { createPage } from './pages/create';
 import { claimPage } from './pages/claim';
 import { sentPage } from './pages/sent';
 import { vouchersPage } from './pages/vouchers';
+import { demoPage } from './pages/demo';
 import { errorBox, h, mount } from './ui';
 import { header } from './pages/shell';
 import { loadNimiq } from './nimiq';
@@ -25,6 +26,7 @@ async function route() {
       if (!hash) return createPage();
       return await claimPage(hash);
     }
+    if (path === '/demo') return demoPage();
     if (path === '/sent') return await sentPage();
     if (path.startsWith('/vouchers')) return await vouchersPage(path.split('/')[2]);
     // A Hub-style cashlink pasted at the root still works.

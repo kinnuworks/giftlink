@@ -148,6 +148,7 @@ export async function createPage() {
               { class: 'notice' },
               h('p', {}, 'Sending a gift needs your Nimiq Pay wallet.'),
               h('a', { class: 'btn btn-ink btn-lg btn-block', href: openInPayUrl('/') }, icon('wallet'), 'Open in Nimiq Pay'),
+              link('/demo', 'See what your friend gets', 'btn btn-outline btn-block'),
             ),
           ]),
     ),

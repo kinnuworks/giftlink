@@ -9,10 +9,14 @@ It needs Nimiq because each gift is a real address on the Nimiq chain. The key t
 ### Try it in 30 seconds
 
 1. In Nimiq Pay, open Giftlink and pick 5 NIM and an occasion.
-2. Tap **Create gift link**, sign once, and approve the payment.
+2. Tap **Create gift link**. The first time, your wallet asks for one signature so your gift list follows you to any phone. Then approve the payment.
 3. Send the link to a friend, or open it on a second phone. Tap **Claim**. The NIM is in that wallet a second later, with a receipt and explorer links.
 
-Didn't get claimed? Go to **Sent** and tap **Take back**.
+Didn't get claimed? Go to **Sent** and tap **Take back**. Running a meetup? **Vouchers** turns one payment into a printable sheet of QR codes, each holding NIM.
+
+No Nimiq Pay at hand? [See what a friend receives](https://giftlink-beige.vercel.app/demo).
+
+A gift link works like cash: whoever has it can claim it, so send it only to the person it's for.
 
 ---
 
