@@ -4,6 +4,8 @@ import { Cancelled, getWallet } from '../wallet';
 import { busy, copy, errorBox, h, link, mount, spinner, timeAgo } from '../ui';
 import { header, openInPayUrl } from './shell';
 import { art } from '../card';
+import { listReceived, type ReceivedGift } from '../gifts';
+import { navigate } from '../ui';
 
 export async function sentPage() {
   mount(header('sent'), h('main', { class: 'page' }, spinner('Connecting to your wallet…')));
@@ -49,6 +51,7 @@ export async function sentPage() {
       'main',
       { class: 'page' },
       h('h1', { class: 't-h2' }, 'Your gifts.'),
+      tabs('sent'),
       gifts.length
         ? h(
             'div',
@@ -108,6 +111,7 @@ function row(g: SentGift) {
       ' ',
       h('a', { href: txUrl(s.claim.hash), target: '_blank', rel: 'noopener' }, timeAgo(s.claim.timestamp)),
     );
+    if (g.thanks) status.append(h('div', { class: 'thanks-note' }, `“${g.thanks}”`, h('span', {}, ' · thanks received')));
   } else {
     status.append(h('span', { class: 'pill wait' }, 'Payment not on chain yet'));
   }
@@ -134,4 +138,61 @@ function row(g: SentGift) {
 
 function stat(value: string, label: string) {
   return h('div', { class: 'stat' }, h('span', { class: 'stat__value t-mono' }, value), h('span', { class: 'stat__label' }, label));
+}
+
+function tabs(active: 'sent' | 'received') {
+  return h(
+    'div',
+    { class: 'segmented tabs', role: 'tablist' },
+    h('button', { role: 'tab', 'aria-selected': String(active === 'sent'), onClick: () => navigate('/sent') }, 'Sent'),
+    h('button', { role: 'tab', 'aria-selected': String(active === 'received'), onClick: () => navigate('/received') }, 'Received'),
+  );
+}
+
+export async function receivedPage() {
+  mount(header('sent'), h('main', { class: 'page' }, h('h1', { class: 't-h2' }, 'Your gifts.'), tabs('received'), spinner('Reading gifts you received…')));
+  let list: ReceivedGift[];
+  try {
+    list = await listReceived();
+  } catch (e) {
+    return mount(header('sent'), h('main', { class: 'page' }, h('h1', { class: 't-h2' }, 'Your gifts.'), tabs('received'), errorBox((e as Error).message, () => receivedPage())));
+  }
+  const total = list.reduce((s, g) => s + g.value, 0);
+  mount(
+    header('sent'),
+    h(
+      'main',
+      { class: 'page' },
+      h('h1', { class: 't-h2' }, 'Your gifts.'),
+      tabs('received'),
+      list.length
+        ? h('div', { class: 'stats stats--2' }, stat(String(list.length), 'received'), stat(formatNim(total), 'NIM in total'))
+        : h('p', { class: 'lead' }, 'Gifts you claim with Giftlink show up here.'),
+      h(
+        'ul',
+        { class: 'gift-list' },
+        ...list.map((g) => {
+          const occ = occasionByTheme(g.theme);
+          return h(
+            'li',
+            { class: 'gift-row' },
+            art(occ.id, 'row-art'),
+            h(
+              'div',
+              { class: 'row-main' },
+              h('div', { class: 'row-title' }, `${formatNim(g.value)} NIM · ${occ.label}`),
+              h(
+                'div',
+                { class: 'row-status' },
+                g.givers > 1 ? `From ${g.givers} people` : g.from ? h('span', {}, 'From ', h('a', { href: addrUrl(g.from), target: '_blank', rel: 'noopener' }, shortAddr(g.from))) : 'From a friend',
+                ' · ',
+                h('a', { href: txUrl(g.claimTx), target: '_blank', rel: 'noopener' }, timeAgo(g.at)),
+              ),
+            ),
+          );
+        }),
+      ),
+      link('/', 'Send a gift', 'btn btn-candy btn-lg btn-block'),
+    ),
+  );
 }

@@ -2,6 +2,7 @@
 // the ready screen and the claim screen.
 import { addrUrl, formatNim, occasionByTheme, shortAddr, txUrl } from './chain';
 import { h } from './ui';
+import { fiatText } from './fiat';
 
 export interface CardOpts {
   value: number; // luna
@@ -28,6 +29,7 @@ export function giftCard(o: CardOpts) {
     h('div', { class: 'gcard__top' }, h('span', { class: 'gcard__brand' }, 'Giftlink'), h('span', { class: 'gcard__occ' }, occ.label)),
     art(occ.id),
     h('div', { class: 'gcard__amount' }, amount, h('span', { class: 'gcard__unit' }, 'NIM')),
+    fiatLine(o.value),
     o.message ? h('p', { class: 'gcard__note' }, o.message) : null,
     o.from || o.fundingHash
       ? h(
@@ -89,4 +91,11 @@ export function icon(name: keyof typeof ICONS | string) {
 
 export function trust(...items: string[]) {
   return h('p', { class: 'trust' }, ...items.map((t) => h('span', {}, t)));
+}
+
+// Fills in the local-money value once the price arrives; empty if it doesn't.
+export function fiatLine(luna: number, cls = 'gcard__fiat') {
+  const el = h('div', { class: cls });
+  fiatText(luna).then((t) => (el.textContent = t));
+  return el;
 }

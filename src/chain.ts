@@ -285,12 +285,12 @@ export async function waitForTx(hash: string, timeoutMs = 60_000, sender?: strin
 
 // Moves a key's whole balance: a plain transfer, or add-stake to an existing staker.
 // Tries with no fee first and retries with a small fee if the network asks for one.
-export async function sweepKey(N: Nimiq, key: GiftKey, to: string, mode: 'transfer' | 'stake' = 'transfer'): Promise<ChainTx> {
+export async function sweepKey(N: Nimiq, key: GiftKey, to: string, mode: 'transfer' | 'stake' = 'transfer', memo?: string): Promise<ChainTx> {
   const balance = (await getAccount(key.address)).balance;
   if (balance <= 0) throw new RpcError('This gift is empty. It may have just been claimed.');
   const height = await getBlockNumber();
   const build = (fee: number) =>
-    mode === 'stake' ? buildAddStake(N, key, to, balance - fee, height, fee) : buildTransfer(N, key, to, balance - fee, height, undefined, fee);
+    mode === 'stake' ? buildAddStake(N, key, to, balance - fee, height, fee) : buildTransfer(N, key, to, balance - fee, height, memo, fee);
   let tx = build(0);
   try {
     await sendRawTransaction(tx.hex);
@@ -416,6 +416,8 @@ export function decodeChipIn(str: string): ChipIn {
 }
 
 export const CHIP_MEMO = 'Giftlink chip-in';
+export const CLAIM_MEMO = 'Giftlink claim';
+export const THANKS_MEMO = 'Giftlink thanks';
 export const GROUP_MEMO = 'Giftlink group';
 
 export function memoText(hex?: string): string {

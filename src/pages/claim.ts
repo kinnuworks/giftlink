@@ -18,6 +18,9 @@ import {
   sameAddr,
   sendRawTransaction,
   sweepKey,
+  CLAIM_MEMO,
+  THANKS_MEMO,
+  fitMemo,
   shortAddr,
   txUrl,
   waitForTx,
@@ -77,10 +80,12 @@ export async function claimPage(encoded: string) {
     }
   }
   currentGivers = state.kind === 'unfunded' ? 0 : state.givers;
+  currentSender = state.kind === 'unfunded' ? undefined : state.funding?.from;
   render(locked ? '' : encoded, gift, key, state, me, !!wallet, encoded);
 }
 
 let currentGivers = 0;
+let currentSender: string | undefined;
 function giftCard(gift: GiftPayload, value: number, from?: string, funding?: ChainTx) {
   return card({ value, theme: gift.theme, message: gift.message || undefined, from, fundingHash: funding?.hash, givers: currentGivers });
 }
@@ -224,7 +229,7 @@ function render(
     const claimBtn = h('button', { class: 'btn btn-candy btn-lg btn-block' }, icon('wallet'), `Claim ${formatNim(value)} NIM`);
     claimBtn.addEventListener('click', () =>
       exclusive(claimBtn, 'Claiming…', async () => {
-        const confirmed = await sweepKey(await loadNimiq(), key, me!);
+        const confirmed = await sweepKey(await loadNimiq(), key, me!, 'transfer', CLAIM_MEMO);
         successPage(gift, value, me!, confirmed, false);
       }),
     );
@@ -272,7 +277,7 @@ function addressClaim(
             }
             const now = await giftState(key.address);
             if (now.kind !== 'ready') throw new Error('This gift was already claimed.');
-            const confirmed = await sweepKey(N, key, to);
+            const confirmed = await sweepKey(N, key, to, 'transfer', CLAIM_MEMO);
             successPage(gift, value, to, confirmed, false);
           } catch (err) {
             fail(err, done);
@@ -318,7 +323,7 @@ async function addStakeOption(
   const btn = h('button', { class: 'btn btn-outline btn-block' }, icon('sprout'), `Claim and stake with ${validator.name}`);
   btn.addEventListener('click', () =>
     exclusive(btn, 'Claiming…', async () => {
-      const confirmed = await sweepKey(await loadNimiq(), key, me);
+      const confirmed = await sweepKey(await loadNimiq(), key, me, 'transfer', CLAIM_MEMO);
       // The NIM is already in the wallet. A cancelled or failed stake must not undo that.
       btn.textContent = 'Confirm the stake in your wallet…';
       try {
@@ -365,8 +370,43 @@ function successPage(gift: GiftPayload, value: number, to: string, tx: ChainTx, 
         tx.blockNumber ? h('div', {}, h('span', {}, 'Block'), h('strong', {}, `#${tx.blockNumber}`)) : null,
         h('div', {}, h('span', {}, 'Transaction'), h('a', { href: txUrl(tx.hash), target: '_blank', rel: 'noopener' }, `${tx.hash.slice(0, 10)}…`)),
       ),
+      currentSender && currentGivers <= 1 && !sameAddr(currentSender, to) ? thanksBox(currentSender) : null,
       link('/', 'Pass it on', 'btn btn-candy btn-lg btn-block'),
       h('p', { class: 'hint center' }, 'Send a gift of your own. It takes one payment.'),
     ),
   );
+}
+
+// A thank-you note on chain: the smallest possible NIM payment back to the sender,
+// carrying a short message. It shows up in the sender's Sent list.
+function thanksBox(sender: string) {
+  const input = h('input', { type: 'text', class: 'field', maxLength: 40, placeholder: 'Thank you!', 'aria-label': 'Thank-you note' });
+  const btn = h('button', { class: 'btn btn-outline btn-block', type: 'submit' }, icon('share'), 'Say thanks');
+  const slot = h('div');
+  const form = h(
+    'form',
+    {
+      class: 'panel-form thanks',
+      onSubmit: async (e: Event) => {
+        e.preventDefault();
+        slot.replaceChildren();
+        const done = busy(btn, 'Check your wallet…');
+        try {
+          const w = await getWallet();
+          if (!w) throw new Error('Open Giftlink in Nimiq Pay to send thanks.');
+          const note = input.value.trim() || 'Thank you!';
+          await call(() => w.sendBasicTransactionWithData({ recipient: sender, value: 1, data: fitMemo(`${THANKS_MEMO}: ${note}`) }));
+          form.replaceChildren(h('p', { class: 'chain-status ok' }, h('span', { class: 'pulse' }), 'Thanks sent. They’ll see it in their Sent list.'));
+        } catch (err) {
+          done();
+          if (!(err instanceof Cancelled)) slot.append(errorBox((err as Error).message));
+        }
+      },
+    },
+    h('label', { class: 'label' }, 'Say thanks ', h('span', { class: 'label__hint' }, 'a note on the chain, costs almost nothing')),
+    input,
+    slot,
+    btn,
+  );
+  return form;
 }

@@ -243,3 +243,9 @@ details.more summary::-webkit-details-marker { display: none; }
 .row-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .switch-row .label__hint { font-size: 13px; line-height: 1.4; }
 .thumb { min-height: 100vh; display: grid; place-items: center; padding: 28px; background: var(--wallpaper-soft); } .thumb .gcard { width: 100%; max-width: 440px; }
+.gcard__fiat { margin-top: 6px; min-height: 18px; font: 600 13.5px/1.3 var(--font-mono); opacity: .7; }
+.tabs { display: flex; margin: 6px 0 4px; }
+.stats--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.thanks-note { margin-top: 4px; font-size: 13px; color: var(--ink-2); font-style: italic; }
+.thanks-note span { font-style: normal; color: var(--ink-3); }
+.thanks { margin-top: 18px; }

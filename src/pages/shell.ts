@@ -19,7 +19,7 @@ export function header(active: 'send' | 'sent' | 'vouchers' | 'claim') {
       { class: 'appbar__bar' },
       brand,
       IS_TESTNET ? h('span', { class: 'net-badge' }, 'Testnet') : null,
-      h('nav', { class: 'appbar__nav', 'aria-label': 'Main' }, item('send', '/', 'Send'), item('sent', '/sent', 'Sent'), item('vouchers', '/vouchers', 'Vouchers')),
+      h('nav', { class: 'appbar__nav', 'aria-label': 'Main' }, item('send', '/', 'Send'), item('sent', '/sent', 'Gifts'), item('vouchers', '/vouchers', 'Vouchers')),
     ),
   );
 }

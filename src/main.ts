@@ -1,7 +1,7 @@
 import './style.css';
 import { createPage } from './pages/create';
 import { claimPage } from './pages/claim';
-import { sentPage } from './pages/sent';
+import { sentPage, receivedPage } from './pages/sent';
 import { vouchersPage } from './pages/vouchers';
 import { demoPage } from './pages/demo';
 import { chipInPage } from './pages/chipin';
@@ -10,6 +10,7 @@ import { errorBox, h, mount } from './ui';
 import { header } from './pages/shell';
 import { loadNimiq } from './nimiq';
 import { getWallet } from './wallet';
+import { loadPrices } from './fiat';
 import { setNetwork } from './chain';
 import { getHostNetwork } from '@nimiq/mini-app-sdk';
 
@@ -19,6 +20,7 @@ if (getHostNetwork() === 'testnet' || new URLSearchParams(location.search).get('
 // Start loading the wallet bridge and the signing code right away, in parallel.
 getWallet();
 loadNimiq().catch(() => undefined);
+loadPrices();
 
 async function route() {
   const path = location.pathname.replace(/\/+$/, '') || '/';
@@ -32,6 +34,7 @@ async function route() {
     if (path === '/thumb') return thumbPage();
     if (path === '/j') return hash ? await chipInPage(hash) : createPage();
     if (path === '/sent') return await sentPage();
+    if (path === '/received') return await receivedPage();
     if (path.startsWith('/vouchers')) return await vouchersPage(path.split('/')[2]);
     // A Hub-style cashlink pasted at the root still works.
     if (hash.length > 40) return await claimPage(hash);

@@ -23,6 +23,9 @@ import {
   GROUP_MEMO,
   fitMemo,
   sweepKey,
+  CLAIM_MEMO,
+  THANKS_MEMO,
+  getTransactions as txsOf,
 } from './chain';
 import { loadNimiq } from './nimiq';
 import { call, getWallet, myAddress, unlockRoot } from './wallet';
@@ -150,6 +153,7 @@ export interface SentGift {
   contributors: number;
   chipLink?: string;
   locked: boolean;
+  thanks?: string;
 }
 
 function themeFromData(txs: ChainTx[]): number {
@@ -171,6 +175,12 @@ export async function listSentGifts(): Promise<SentGift[]> {
   const root = await unlockRoot(me);
   const local = readLocal(me);
   const found = await scanIndexes(root, local.map((g) => g.index));
+  const myTxs = await txsOf(me, 100).catch(() => [] as ChainTx[]);
+  const thanksFrom = new Map<string, string>();
+  for (const t of myTxs) {
+    const m = memoText(t.recipientData || t.senderData);
+    if (sameAddr(t.to, me) && m.startsWith(THANKS_MEMO)) thanksFrom.set(t.from.replace(/\s/g, ''), m.slice(THANKS_MEMO.length).replace(/^[:\s]+/, '') || 'Thank you!');
+  }
   const out: SentGift[] = [];
   for (const [index, txs] of found) {
     const key = await giftKey(root, index);
@@ -188,7 +198,8 @@ export async function listSentGifts(): Promise<SentGift[]> {
     const balance = state.kind === 'ready' ? state.balance : value;
     const link = balance > 0 ? await linkFor(key.secret, balance, message, theme, l?.word) : '';
     const chipLink = group ? chipUrl(encodeChipIn({ address: key.address, theme, title })) : undefined;
-    out.push({ index, address: key.address, value: Math.max(value, balance), message, theme, createdAt, state, link, group, title, contributors, chipLink, locked: !!l?.word });
+    const thanks = state.kind === 'claimed' && !state.takenBack ? thanksFrom.get(state.claimedBy.replace(/\s/g, '')) : undefined;
+    out.push({ index, address: key.address, value: Math.max(value, balance), message, theme, createdAt, state, link, group, title, contributors, chipLink, locked: !!l?.word, thanks });
   }
   // Recover the local list on a new device.
   if (local.length < out.length) {
@@ -226,4 +237,36 @@ export async function takeBack(gift: SentGift): Promise<ChainTx> {
 
 export function parseGiftFromHash(hash: string) {
   return decodeGift(hash);
+}
+
+export interface ReceivedGift {
+  value: number;
+  at: number;
+  claimTx: string;
+  giftAddress: string;
+  from?: string;
+  theme: number;
+  givers: number;
+}
+
+// Gifts this wallet claimed, found by the claim memo, with who sent them.
+export async function listReceived(): Promise<ReceivedGift[]> {
+  const me = await myAddress();
+  const txs = await txsOf(me, 100);
+  const claims = txs.filter((t) => sameAddr(t.to, me) && memoText(t.recipientData || t.senderData).startsWith(CLAIM_MEMO));
+  return Promise.all(
+    claims.map(async (c) => {
+      const giftTxs = await txsOf(c.from, 20).catch(() => [] as ChainTx[]);
+      const incoming = giftTxs.filter((t) => sameAddr(t.to, c.from)).sort((a, b) => a.blockNumber - b.blockNumber);
+      return {
+        value: c.value,
+        at: c.timestamp,
+        claimTx: c.hash,
+        giftAddress: c.from,
+        from: incoming[0]?.from,
+        theme: themeFromData(incoming),
+        givers: new Set(incoming.map((t) => t.from.replace(/\s/g, ''))).size,
+      };
+    }),
+  );
 }
