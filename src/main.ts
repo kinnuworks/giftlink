@@ -6,6 +6,7 @@ import { vouchersPage } from './pages/vouchers';
 import { demoPage } from './pages/demo';
 import { chipInPage } from './pages/chipin';
 import { thumbPage } from './pages/thumb';
+import { statsPage } from './pages/stats';
 import { errorBox, h, mount } from './ui';
 import { header } from './pages/shell';
 import { loadNimiq } from './nimiq';
@@ -32,6 +33,7 @@ async function route() {
     }
     if (path === '/demo') return demoPage();
     if (path === '/thumb') return thumbPage();
+    if (path === '/stats') return await statsPage();
     if (path === '/j') return hash ? await chipInPage(hash) : createPage();
     if (path === '/sent') return await sentPage();
     if (path === '/received') return await receivedPage();

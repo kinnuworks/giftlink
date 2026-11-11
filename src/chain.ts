@@ -283,12 +283,31 @@ export async function waitForTx(hash: string, timeoutMs = 60_000, sender?: strin
   throw new RpcError('The network has not confirmed this yet. It may still go through; check again in a minute.');
 }
 
+// Public registry: each claim also sends 1 luna here with the recipient in the memo, so
+// anyone can count real claims from the chain (see /stats). The address comes from a
+// published seed, so nobody holds special rights over it.
+export function registryKey(N: Nimiq): GiftKey {
+  return keyFromSecret(N, N.Hash.computeSha256(new TextEncoder().encode('giftlink public registry v1')));
+}
+export const REGISTRY_MEMO = 'Giftlink claim to';
+
 // Moves a key's whole balance: a plain transfer, or add-stake to an existing staker.
 // Tries with no fee first and retries with a small fee if the network asks for one.
 export async function sweepKey(N: Nimiq, key: GiftKey, to: string, mode: 'transfer' | 'stake' = 'transfer', memo?: string): Promise<ChainTx> {
-  const balance = (await getAccount(key.address)).balance;
+  let balance = (await getAccount(key.address)).balance;
   if (balance <= 0) throw new RpcError('This gift is empty. It may have just been claimed.');
   const height = await getBlockNumber();
+  // Claims (not take-backs) leave a 1-luna marker in the public registry. Best effort.
+  if (memo === CLAIM_MEMO && balance > 2) {
+    try {
+      const reg = registryKey(N).address;
+      const beacon = buildTransfer(N, key, reg, 1, height, fitMemo(`${REGISTRY_MEMO} ${to.replace(/\s/g, '')}`));
+      await sendRawTransaction(beacon.hex);
+      balance -= 1;
+    } catch {
+      // the claim matters more than the count
+    }
+  }
   const build = (fee: number) =>
     mode === 'stake' ? buildAddStake(N, key, to, balance - fee, height, fee) : buildTransfer(N, key, to, balance - fee, height, memo, fee);
   let tx = build(0);
