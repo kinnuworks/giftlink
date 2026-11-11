@@ -12,17 +12,19 @@ It needs Nimiq because each gift is a real address on the Nimiq chain. The key t
 2. Tap **Create gift link**. The first time, your wallet asks for one signature so your gift list follows you to any phone. Then approve the payment.
 3. Send the link to a friend, or open it on a second phone. Tap **Claim**. The NIM is in that wallet a second later, with a receipt and explorer links.
 
-Didn't get claimed? Go to **Sent** and tap **Take back**. Running a meetup? **Vouchers** turns one payment into a printable sheet of QR codes, each holding NIM.
+Buying for someone together? Pick **Group gift**: friends get a chip-in link and add NIM to the same gift before you send it. Didn't get claimed? Go to **Sent** and tap **Take back**. Running a meetup? **Vouchers** turns one payment into a printable sheet of QR codes, each holding NIM.
 
 No Nimiq Pay at hand? [See what a friend receives](https://giftlink-beige.vercel.app/demo).
 
-A gift link works like cash: whoever has it can claim it, so send it only to the person it's for.
+A gift link works like cash: whoever has it can claim it. Posting in a group chat? Turn on **Lock with a secret word** and tell them the word separately.
 
 ---
 
 ## What it does
 
 - **Gift links.** One payment moves the NIM to a fresh address made for that gift. The link carries the address's key, the amount, an occasion and an optional note.
+- **Group gifts.** Start a gift, share a chip-in link, and friends add NIM to the same gift address from their own wallets. Everyone sees who chipped in, read straight from the chain. The chip-in link holds no key, so it can collect but never claim.
+- **Secret word lock.** Optionally lock a gift with a word. The link then carries the key scrambled with that word (PBKDF2), so a leaked link alone can't claim it.
 - **Claim in one tap.** The recipient's browser signs the claim with the gift's key and sends it to the Nimiq chain. Nobody needs an account.
 - **Claim into staking.** If you already stake, the gift joins your stake in one step, with no wallet popup. If you don't, gifts of 100 NIM or more can be claimed and staked with a well-rated pool.
 - **Sent list on any phone.** Gift keys come from one signature by your wallet, so Giftlink can rebuild your list of sent gifts from the chain on any device and let you take back the unclaimed ones.
@@ -45,7 +47,8 @@ Chain reads use Nimiq's public RPC. Pool choices come from Nimiq's validators AP
 
 - Giftlink has no server, no database and no account. It stores your gift list only in your browser, and can rebuild it from the chain.
 - The note you write stays in the link. Only the occasion name goes on chain, in the funding memo.
-- Anyone who has a gift link or voucher QR can claim it, like cash. Send it only to the person it's for.
+- Anyone who has an unlocked gift link or voucher QR can claim it, like cash. Lock gifts you post in group chats.
+- Chip-in payments carry the name you type, so the group can see who added what. That name is public on the Nimiq chain.
 
 ## Develop
 
