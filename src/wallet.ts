@@ -8,7 +8,11 @@ let walletPromise: Promise<NimiqProvider | null> | null = null;
 
 export function getWallet(): Promise<NimiqProvider | null> {
   if (!walletPromise) {
-    walletPromise = init({ timeout: 3000 }).catch(() => null);
+    walletPromise = init({ timeout: 3000 }).catch(() => {
+      // Let a later call try again (the host may just have been slow).
+      setTimeout(() => (walletPromise = null), 0);
+      return null;
+    });
   }
   return walletPromise;
 }
@@ -55,16 +59,15 @@ export async function myAddress(): Promise<string> {
   if (!w) throw new Error('Open Giftlink in Nimiq Pay to use your wallet.');
   const accounts = await call(() => w.listAccounts());
   if (!accounts.length) throw new Error('Nimiq Pay did not share an address.');
-  for (const a of accounts) {
-    try {
-      const acc = await getAccount(a);
-      if (!acc.type || acc.type === 'basic') return (addressCache = a);
-    } catch {
-      // unknown account: treat as a fresh basic account
-      return (addressCache = a);
-    }
-  }
-  return (addressCache = accounts[0]);
+  // Read every account; RPC errors are real errors, not "probably basic".
+  const infos = await Promise.all(accounts.map((a) => getAccount(a)));
+  const basic = infos.filter((i) => !i.type || i.type === 'basic');
+  if (!basic.length) throw new Error('Nimiq Pay did not share a regular account address.');
+  // Prefer a basic account that is in use; an unused HTLC slot also reads as an empty basic account.
+  const pick = basic.find((i) => i.balance > 0) ?? basic[0];
+  addressCache = accounts[infos.indexOf(pick)];
+  w.on?.('accountsChanged', () => (addressCache = null));
+  return addressCache;
 }
 
 export async function isStaker(address: string): Promise<boolean> {
@@ -87,16 +90,40 @@ export function cachedRoot(address: string): Uint8Array | null {
 
 // Asks the wallet to sign a fixed message once. The signature seeds every gift key,
 // so the sender can see and take back their gifts on any device.
-export async function unlockRoot(address: string): Promise<Uint8Array> {
+const rootPromises = new Map<string, Promise<Uint8Array>>();
+
+export function unlockRoot(address: string): Promise<Uint8Array> {
   const cached = cachedRoot(address);
-  if (cached) return cached;
+  if (cached) return Promise.resolve(cached);
+  // One signature prompt even if several screens ask at once.
+  let p = rootPromises.get(address);
+  if (!p) {
+    p = signRoot(address).finally(() => rootPromises.delete(address));
+    rootPromises.set(address, p);
+  }
+  return p;
+}
+
+async function signRoot(address: string): Promise<Uint8Array> {
+  const asked = address;
   const w = await getWallet();
   if (!w) throw new Error('Open Giftlink in Nimiq Pay to use your wallet.');
   const sig = await call(() => w.sign(ROOT_MESSAGE));
   const N = await loadNimiq();
+  try {
+    const signer = N.PublicKey.fromHex(sig.publicKey).toAddress().toUserFriendlyAddress();
+    if (signer.replace(/\s/g, '') !== address.replace(/\s/g, '')) {
+      // The wallet signed with another account; follow the signer so keys stay consistent.
+      addressCache = signer;
+      address = signer;
+    }
+  } catch {
+    // unexpected key format: keep going with the listed address
+  }
   const root = rootFromSignature(N, sig.signature, sig.publicKey);
   try {
     localStorage.setItem(rootKey(address), toHex(root));
+    if (asked !== address) localStorage.setItem(rootKey(asked), toHex(root));
   } catch {
     // storage blocked: the root lives for this session only
   }

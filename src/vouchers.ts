@@ -10,6 +10,7 @@ import {
   keyFromSecret,
   sameAddr,
   sendRawTransaction,
+  fitMemo,
   type ChainTx,
   type GiftKey,
 } from './chain';
@@ -26,6 +27,7 @@ export interface BatchInfo {
   label: string;
   theme: number;
   createdAt: number;
+  splitHeight?: number; // reused so a resumed split re-sends identical transactions
 }
 
 const batchKey = (addr: string) => `giftlink:batches:${addr.replace(/\s/g, '')}`;
@@ -105,7 +107,7 @@ export async function fundBatch(count: number, value: number, label: string, the
   const index = await nextBatchIndex();
   const funding = await batchFundingKey(root, index);
   await call(() =>
-    w.sendBasicTransactionWithData({ recipient: funding.address, value: value * count, data: `Giftlink vouchers x${count}` }),
+    w.sendBasicTransactionWithData({ recipient: funding.address, value: value * count, data: fitMemo(`Giftlink vouchers x${count}`) }),
   );
   const info: BatchInfo = { index, count, value, label, theme, createdAt: Date.now() };
   writeBatches(me, [...readBatches(me).filter((b) => b.index !== index), info]);
@@ -132,19 +134,32 @@ export async function splitBatch(batch: BatchInfo, onProgress: (done: number, to
   for (let k = 0; k < batch.count; k++) {
     const key = await voucherKey(root, batch.index, k);
     if (outs.some((t) => sameAddr(t.to, key.address))) continue;
+    const vAcc = await getAccount(key.address).catch(() => ({ balance: 0 }));
+    if (vAcc.balance > 0) continue; // already funded, maybe still unconfirmed in history
     pending.push({ k, key });
   }
   let done = batch.count - pending.length;
   onProgress(done, batch.count);
   if (!pending.length) return;
-  if (acc.balance < batch.value * pending.length) {
-    throw new Error('The voucher payment has not arrived in full yet. Wait a moment and tap Continue.');
+  // Reuse the first split's height: re-sent transactions are then identical, so the
+  // network treats them as duplicates instead of paying a voucher twice.
+  let height = batch.splitHeight;
+  const current = await getBlockNumber();
+  if (!height || current - height > 7000) {
+    if (acc.balance < batch.value * pending.length) {
+      throw new Error('The voucher payment has not arrived in full yet. Wait a moment and tap Continue.');
+    }
+    height = current;
+    batch.splitHeight = height;
+    writeBatches(me, [...readBatches(me).filter((b) => b.index !== batch.index), batch]);
   }
-  const height = await getBlockNumber();
   const hashes: string[] = [];
   for (const p of pending) {
     const tx = buildTransfer(N, funding, p.key.address, batch.value, height, `Giftlink voucher ${p.k + 1}`);
-    await sendRawTransaction(tx.hex);
+    await sendRawTransaction(tx.hex).catch((e) => {
+      // A duplicate of an already-sent transaction is fine.
+      if (!/already|known|duplicate/i.test((e as Error).message)) throw e;
+    });
     hashes.push(tx.hash);
     await new Promise((r) => setTimeout(r, 250));
   }

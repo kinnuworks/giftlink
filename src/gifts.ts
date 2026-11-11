@@ -21,6 +21,8 @@ import {
   memoText,
   sameAddr,
   GROUP_MEMO,
+  fitMemo,
+  sweepKey,
 } from './chain';
 import { loadNimiq } from './nimiq';
 import { call, getWallet, myAddress, unlockRoot } from './wallet';
@@ -109,11 +111,11 @@ export async function createGift(value: number, theme: number, message: string, 
   const me = await myAddress();
   const root = await unlockRoot(me);
   const local = readLocal(me);
-  let index = local.length ? Math.max(...local.map((g) => g.index)) + 1 : -1;
-  if (index < 0) {
-    const used = await scanIndexes(root);
-    index = used.size ? Math.max(...used.keys()) + 1 : 0;
-  }
+  // Never reuse an index: take the highest of this device's list and the chain.
+  const localNext = local.length ? Math.max(...local.map((g) => g.index)) + 1 : 0;
+  const used = await scanIndexes(root, local.map((g) => g.index));
+  const chainNext = used.size ? Math.max(...used.keys()) + 1 : 0;
+  const index = Math.max(localNext, chainNext);
   const key = await giftKey(root, index);
   const occasion = occasionByTheme(theme);
   const N = await loadNimiq();
@@ -121,16 +123,10 @@ export async function createGift(value: number, theme: number, message: string, 
     w.sendBasicTransactionWithData({
       recipient: key.address,
       value,
-      data: `${opts.group ? GROUP_MEMO : 'Giftlink'} ${occasion.emoji} ${occasion.label}`,
+      data: fitMemo(`${opts.group ? GROUP_MEMO : 'Giftlink'} ${occasion.emoji} ${occasion.label}`),
     }),
   );
-  let fundingHash = '';
-  try {
-    fundingHash = N.Transaction.fromAny(serialized).hash();
-  } catch {
-    // older hosts may return the hash directly
-    fundingHash = /^[0-9a-f]{64}$/i.test(serialized) ? serialized : '';
-  }
+  const fundingHash = txHashOf(N, serialized);
   const word = opts.word?.trim() || undefined;
   const link = await linkFor(key.secret, value, message, theme, word);
   const encoded = link.split('#')[1];
@@ -198,19 +194,26 @@ export async function listSentGifts(): Promise<SentGift[]> {
   if (local.length < out.length) {
     writeLocal(
       me,
-      out.map((g) => ({ index: g.index, value: g.value, message: g.message, theme: g.theme, createdAt: g.createdAt, group: g.group, title: g.title })),
+      out.map((g) => ({ ...local.find((l) => l.index === g.index), index: g.index, value: g.value, message: g.message, theme: g.theme, createdAt: g.createdAt, group: g.group, title: g.title })),
     );
   }
   return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 // Sends the whole balance of a gift (or voucher) address to `to`, signed with the gift key.
-export async function sweep(key: GiftKey, to: string, balance: number): Promise<ChainTx> {
-  const N = await loadNimiq();
-  const height = await getBlockNumber();
-  const { hex, hash } = buildTransfer(N, key, to, balance, height);
-  await sendRawTransaction(hex);
-  return waitForTx(hash);
+export async function sweep(key: GiftKey, to: string, _balance?: number): Promise<ChainTx> {
+  return sweepKey(await loadNimiq(), key, to);
+}
+
+// The host returns a transaction hash; older hosts may return the serialized transaction.
+export function txHashOf(N: Awaited<ReturnType<typeof loadNimiq>>, result: string): string {
+  const clean = String(result || '').replace(/^0x/i, '');
+  if (/^[0-9a-f]{64}$/i.test(clean)) return clean.toLowerCase();
+  try {
+    return N.Transaction.fromAny(clean).hash();
+  } catch {
+    return '';
+  }
 }
 
 export async function takeBack(gift: SentGift): Promise<ChainTx> {

@@ -2,6 +2,7 @@
 // gift's address, so it can collect but never claim.
 import {
   CHIP_MEMO,
+  fitMemo,
   decodeChipIn,
   formatNim,
   getAccount,
@@ -20,6 +21,7 @@ import { Cancelled, call, getWallet } from '../wallet';
 import { busy, errorBox, h, link, mount, spinner } from '../ui';
 import { giftCard, icon, trust } from '../card';
 import { header, openInPayUrl } from './shell';
+import { txHashOf } from '../gifts';
 
 const CHIP_AMOUNTS = [2, 5, 10, 25];
 
@@ -104,14 +106,9 @@ export async function chipInPage(encoded: string) {
             try {
               const who = name.value.trim().replace(/[^\p{L}\p{N} .'-]/gu, '').slice(0, 24);
               const serialized = await call(() =>
-                wallet.sendBasicTransactionWithData({ recipient: c.address, value: amount * LUNA, data: `${CHIP_MEMO}${who ? ': ' + who : ''}` }),
+                wallet.sendBasicTransactionWithData({ recipient: c.address, value: amount * LUNA, data: fitMemo(`${CHIP_MEMO}${who ? ': ' + who : ''}`) }),
               );
-              let hash = '';
-              try {
-                hash = (await loadNimiq()).Transaction.fromAny(serialized).hash();
-              } catch {
-                hash = /^[0-9a-f]{64}$/i.test(serialized) ? serialized : '';
-              }
+              const hash = txHashOf(await loadNimiq(), serialized);
               thanksPage(c, amount * LUNA, hash, encoded);
             } catch (err) {
               done();

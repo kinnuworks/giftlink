@@ -168,28 +168,37 @@ export function buildTransfer(
   value: number,
   validityStartHeight: number,
   data?: string,
-): { hex: string; hash: string } {
+  fee = 0,
+): { hex: string; hash: string; size: number } {
   const sender = from.keyPair.toAddress();
   const to = N.Address.fromUserFriendlyAddress(recipient);
   const tx = data
-    ? N.TransactionBuilder.newBasicWithData(sender, to, new TextEncoder().encode(data), BigInt(value), 0n, validityStartHeight, NETWORK_ID)
-    : N.TransactionBuilder.newBasic(sender, to, BigInt(value), 0n, validityStartHeight, NETWORK_ID);
+    ? N.TransactionBuilder.newBasicWithData(sender, to, new TextEncoder().encode(data), BigInt(value), BigInt(fee), validityStartHeight, NETWORK_ID)
+    : N.TransactionBuilder.newBasic(sender, to, BigInt(value), BigInt(fee), validityStartHeight, NETWORK_ID);
   tx.sign(from.keyPair, undefined);
-  return { hex: tx.toHex(), hash: tx.hash() };
+  return { hex: tx.toHex(), hash: tx.hash(), size: tx.serializedSize };
 }
 
 // Adds the gift's NIM straight to an existing staker (the recipient), no wallet popup needed.
-export function buildAddStake(N: Nimiq, from: GiftKey, stakerAddress: string, value: number, validityStartHeight: number) {
+export function buildAddStake(N: Nimiq, from: GiftKey, stakerAddress: string, value: number, validityStartHeight: number, fee = 0) {
   const tx = N.TransactionBuilder.newAddStake(
     from.keyPair.toAddress(),
     N.Address.fromUserFriendlyAddress(stakerAddress),
     BigInt(value),
-    0n,
+    BigInt(fee),
     validityStartHeight,
     NETWORK_ID,
   );
   tx.sign(from.keyPair, undefined);
-  return { hex: tx.toHex(), hash: tx.hash() };
+  return { hex: tx.toHex(), hash: tx.hash(), size: tx.serializedSize };
+}
+
+// Trims memo text so it fits the 64-byte transaction data limit.
+export function fitMemo(text: string, maxBytes = 64): string {
+  const enc = new TextEncoder();
+  let out = text;
+  while (enc.encode(out).length > maxBytes) out = Array.from(out).slice(0, -1).join('');
+  return out;
 }
 
 // ---------- RPC ----------
@@ -251,8 +260,11 @@ export const getStaker = (address: string) =>
     () => null,
   );
 
-export async function waitForTx(hash: string, timeoutMs = 60_000): Promise<ChainTx> {
+// Waits for a transaction. If the node can't look it up by hash, an emptied sender
+// account also counts as confirmed (claims and take-backs move the whole balance).
+export async function waitForTx(hash: string, timeoutMs = 60_000, sender?: string): Promise<ChainTx> {
   const start = Date.now();
+  let emptySeen = 0;
   while (Date.now() - start < timeoutMs) {
     try {
       const tx = await getTransaction(hash);
@@ -260,9 +272,34 @@ export async function waitForTx(hash: string, timeoutMs = 60_000): Promise<Chain
     } catch {
       // not found yet
     }
+    if (sender) {
+      const acc = await getAccount(sender).catch(() => null);
+      if (acc && acc.balance === 0 && ++emptySeen >= 3) {
+        return { hash, blockNumber: 0, timestamp: Date.now(), confirmations: 1, from: sender, to: '', value: 0, fee: 0, recipientData: '' };
+      }
+    }
     await new Promise((r) => setTimeout(r, 1500));
   }
   throw new RpcError('The network has not confirmed this yet. It may still go through; check again in a minute.');
+}
+
+// Moves a key's whole balance: a plain transfer, or add-stake to an existing staker.
+// Tries with no fee first and retries with a small fee if the network asks for one.
+export async function sweepKey(N: Nimiq, key: GiftKey, to: string, mode: 'transfer' | 'stake' = 'transfer'): Promise<ChainTx> {
+  const balance = (await getAccount(key.address)).balance;
+  if (balance <= 0) throw new RpcError('This gift is empty. It may have just been claimed.');
+  const height = await getBlockNumber();
+  const build = (fee: number) =>
+    mode === 'stake' ? buildAddStake(N, key, to, balance - fee, height, fee) : buildTransfer(N, key, to, balance - fee, height, undefined, fee);
+  let tx = build(0);
+  try {
+    await sendRawTransaction(tx.hex);
+  } catch (e) {
+    if (!/fee|priority|low|mempool/i.test((e as Error).message)) throw e;
+    tx = build(Math.max(tx.size, 200));
+    await sendRawTransaction(tx.hex);
+  }
+  return waitForTx(tx.hash, 60_000, key.address);
 }
 
 // ---------- gift status ----------

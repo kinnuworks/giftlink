@@ -17,6 +17,7 @@ import {
   occasionByTheme,
   sameAddr,
   sendRawTransaction,
+  sweepKey,
   shortAddr,
   txUrl,
   waitForTx,
@@ -67,7 +68,14 @@ export async function claimPage(encoded: string) {
   }
 
   const wallet = await walletP;
-  const me = wallet ? await myAddress().catch(() => null) : null;
+  let me: string | null = null;
+  if (wallet) {
+    try {
+      me = await myAddress();
+    } catch (e) {
+      return mount(header('claim'), h('main', { class: 'page' }, errorBox(`Couldn't read your wallet address. ${(e as Error).message}`, () => claimPage(encoded))));
+    }
+  }
   currentGivers = state.kind === 'unfunded' ? 0 : state.givers;
   render(locked ? '' : encoded, gift, key, state, me, !!wallet, encoded);
 }
@@ -191,28 +199,37 @@ function render(
 
   const fail = (e: unknown, done: () => void) => {
     done();
+    actions.querySelectorAll('button').forEach((b) => ((b as HTMLButtonElement).disabled = false));
     if (e instanceof Cancelled) return;
     errorSlot.replaceChildren(errorBox((e as Error).message));
+  };
+  // Only one claim action at a time, and never claim a gift that's already gone.
+  const exclusive = async (btn: HTMLButtonElement, label: string, run: () => Promise<void>) => {
+    errorSlot.replaceChildren();
+    const done = busy(btn, label);
+    actions.querySelectorAll('button').forEach((b) => ((b as HTMLButtonElement).disabled = true));
+    try {
+      const now = await giftState(key.address);
+      if (now.kind !== 'ready') {
+        currentGivers = now.kind === 'claimed' ? now.givers : currentGivers;
+        return render(encoded, gift, key, now, me, inPay, rawEncoded);
+      }
+      await run();
+    } catch (e) {
+      fail(e, done);
+    }
   };
 
   if (inPay && me) {
     const claimBtn = h('button', { class: 'btn btn-candy btn-lg btn-block' }, icon('wallet'), `Claim ${formatNim(value)} NIM`);
-    claimBtn.addEventListener('click', async () => {
-      errorSlot.replaceChildren();
-      const done = busy(claimBtn, 'Claiming…');
-      try {
-        const N = await loadNimiq();
-        const height = await getBlockNumber();
-        const tx = buildTransfer(N, key, me, value, height);
-        await sendRawTransaction(tx.hex);
-        const confirmed = await waitForTx(tx.hash);
-        successPage(gift, value, me, confirmed, false);
-      } catch (e) {
-        fail(e, done);
-      }
-    });
+    claimBtn.addEventListener('click', () =>
+      exclusive(claimBtn, 'Claiming…', async () => {
+        const confirmed = await sweepKey(await loadNimiq(), key, me!);
+        successPage(gift, value, me!, confirmed, false);
+      }),
+    );
     actions.append(claimBtn);
-    addStakeOption(actions, errorSlot, gift, key, value, me, fail);
+    addStakeOption(actions, gift, key, value, me, exclusive);
   } else {
     actions.append(
       h('a', { class: 'btn btn-candy btn-lg btn-block', href: openInPayUrl('/c', rawEncoded) }, 'Open in Nimiq Pay to claim'),
@@ -253,10 +270,9 @@ function addressClaim(
             } catch {
               throw new Error('That doesn’t look like a Nimiq address. It starts with NQ and has 36 characters.');
             }
-            const height = await getBlockNumber();
-            const tx = buildTransfer(N, key, to, value, height);
-            await sendRawTransaction(tx.hex);
-            const confirmed = await waitForTx(tx.hash);
+            const now = await giftState(key.address);
+            if (now.kind !== 'ready') throw new Error('This gift was already claimed.');
+            const confirmed = await sweepKey(N, key, to);
             successPage(gift, value, to, confirmed, false);
           } catch (err) {
             fail(err, done);
@@ -269,33 +285,26 @@ function addressClaim(
   );
 }
 
+type Exclusive = (btn: HTMLButtonElement, label: string, run: () => Promise<void>) => Promise<void>;
+
 async function addStakeOption(
   actions: HTMLElement,
-  errorSlot: HTMLElement,
   gift: GiftPayload,
   key: ReturnType<typeof keyFromSecret>,
   value: number,
   me: string,
-  fail: (e: unknown, done: () => void) => void,
+  exclusive: Exclusive,
 ) {
   const staker = await isStaker(me).catch(() => false);
   if (staker) {
     // One step: the gift key adds its NIM straight to your existing stake.
     const btn = h('button', { class: 'btn btn-outline btn-block' }, icon('sprout'), 'Claim into my stake');
-    btn.addEventListener('click', async () => {
-      errorSlot.replaceChildren();
-      const done = busy(btn, 'Adding to your stake…');
-      try {
-        const N = await loadNimiq();
-        const height = await getBlockNumber();
-        const tx = buildAddStake(N, key, me, value, height);
-        await sendRawTransaction(tx.hex);
-        const confirmed = await waitForTx(tx.hash);
+    btn.addEventListener('click', () =>
+      exclusive(btn, 'Adding to your stake…', async () => {
+        const confirmed = await sweepKey(await loadNimiq(), key, me, 'stake');
         successPage(gift, value, me, confirmed, true);
-      } catch (e) {
-        fail(e, done);
-      }
-    });
+      }),
+    );
     actions.append(btn, h('p', { class: 'hint' }, 'You already stake, so the gift joins your stake and starts earning with your pool.'));
     return;
   }
@@ -307,22 +316,19 @@ async function addStakeOption(
   const validator = await pickValidator().catch(() => null);
   if (!validator) return;
   const btn = h('button', { class: 'btn btn-outline btn-block' }, icon('sprout'), `Claim and stake with ${validator.name}`);
-  btn.addEventListener('click', async () => {
-    errorSlot.replaceChildren();
-    const done = busy(btn, 'Claiming…');
-    try {
-      const N = await loadNimiq();
-      const height = await getBlockNumber();
-      const tx = buildTransfer(N, key, me, value, height);
-      await sendRawTransaction(tx.hex);
-      const confirmed = await waitForTx(tx.hash);
+  btn.addEventListener('click', () =>
+    exclusive(btn, 'Claiming…', async () => {
+      const confirmed = await sweepKey(await loadNimiq(), key, me);
+      // The NIM is already in the wallet. A cancelled or failed stake must not undo that.
       btn.textContent = 'Confirm the stake in your wallet…';
-      await stakeNew(validator, value);
-      successPage(gift, value, me, confirmed, true, validator);
-    } catch (e) {
-      fail(e, done);
-    }
-  });
+      try {
+        await stakeNew(validator, value);
+        successPage(gift, value, me, confirmed, true, validator);
+      } catch (e) {
+        successPage(gift, value, me, confirmed, false, undefined, e instanceof Cancelled ? 'Staking was skipped. Your NIM is in your wallet.' : `Staking didn’t go through (${(e as Error).message}). Your NIM is in your wallet.`);
+      }
+    }),
+  );
   actions.append(btn, h('p', { class: 'hint' }, `Staking earns rewards from the pool (fee ${validator.fee > 1 ? validator.fee : Math.round(validator.fee * 100)}%). You can unstake later; it takes from 12 hours to a few days.`));
 }
 
@@ -332,7 +338,7 @@ async function stakeNew(v: Validator, value: number) {
   await call(() => w.sendNewStakerTransaction({ delegation: v.address, value }));
 }
 
-function successPage(gift: GiftPayload, value: number, to: string, tx: ChainTx, staked: boolean, validator?: Validator) {
+function successPage(gift: GiftPayload, value: number, to: string, tx: ChainTx, staked: boolean, validator?: Validator, note?: string) {
   const occasion = occasionByTheme(gift.theme);
   mount(
     header('claim'),
@@ -350,12 +356,13 @@ function successPage(gift: GiftPayload, value: number, to: string, tx: ChainTx, 
             : 'It joined your stake and earns rewards with your pool.'
           : 'It’s in your wallet now.',
       ),
+      note ? h('p', { class: 'notice' }, note) : null,
       h(
         'div',
         { class: 'receipt' },
         h('div', {}, h('span', {}, 'Amount'), h('strong', {}, `${formatNim(value)} NIM`)),
         h('div', {}, h('span', {}, 'To'), h('a', { href: addrUrl(to), target: '_blank', rel: 'noopener' }, shortAddr(to))),
-        h('div', {}, h('span', {}, 'Block'), h('strong', {}, `#${tx.blockNumber}`)),
+        tx.blockNumber ? h('div', {}, h('span', {}, 'Block'), h('strong', {}, `#${tx.blockNumber}`)) : null,
         h('div', {}, h('span', {}, 'Transaction'), h('a', { href: txUrl(tx.hash), target: '_blank', rel: 'noopener' }, `${tx.hash.slice(0, 10)}…`)),
       ),
       link('/', 'Pass it on', 'btn btn-candy btn-lg btn-block'),
