@@ -94,7 +94,7 @@ function giftCard(gift: GiftPayload, value: number, from?: string, funding?: Cha
 async function wordPage(encoded: string): Promise<GiftPayload | null> {
   const preview = decodeLockedPreview(encoded);
   return new Promise((resolve) => {
-    const input = h('input', { type: 'text', class: 'field', placeholder: 'Secret word', autocomplete: 'off', autocapitalize: 'off', spellcheck: false, 'aria-label': 'Secret word' });
+    const input = h('input', { type: 'text', class: 'field', placeholder: 'Secret words', autocomplete: 'off', autocapitalize: 'off', spellcheck: false, 'aria-label': 'Secret word' });
     const errorSlot = h('div');
     const btn = h('button', { class: 'btn btn-candy btn-lg btn-block', type: 'submit' }, 'Open gift');
     mount(
@@ -119,7 +119,7 @@ async function wordPage(encoded: string): Promise<GiftPayload | null> {
                 const [acc, txs] = await Promise.all([getAccount(addr), getTransactions(addr, 1).catch(() => [])]);
                 if (acc.balance === 0 && txs.length === 0) {
                   done();
-                  errorSlot.append(errorBox('That word doesn’t open this gift. Check the spelling with the sender.'));
+                  errorSlot.append(errorBox('Those words don’t open this gift. Check the spelling with the sender.'));
                   return;
                 }
                 resolve(g);
@@ -129,9 +129,9 @@ async function wordPage(encoded: string): Promise<GiftPayload | null> {
               }
             },
           },
-          h('label', { class: 'label' }, 'This gift is locked with a secret word'),
+          h('label', { class: 'label' }, 'This gift is locked with secret words'),
           input,
-          h('p', { class: 'hint' }, 'The sender told you the word separately. Capital letters don’t matter.'),
+          h('p', { class: 'hint' }, 'The sender told you the words separately. Capital letters don’t matter.'),
           errorSlot,
           btn,
         ),

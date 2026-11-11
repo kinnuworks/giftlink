@@ -368,10 +368,11 @@ export const addrUrl = (address: string) => `${EXPLORER}${address.replace(/\s/g,
 export const LOCK_PREFIX = 'L.';
 const LOCK_ITERATIONS = 600_000;
 
-// Two or more words, or a long single word: short words are easy to guess offline.
+// Three or more words and 16+ characters: short secrets are easy to guess offline.
+// The app suggests four random words from a 256-word list (32 bits, then PBKDF2).
 export function wordStrongEnough(word: string): boolean {
   const w = word.trim();
-  return w.split(/\s+/).filter(Boolean).length >= 2 ? w.length >= 8 : w.length >= 12;
+  return w.split(/\s+/).filter(Boolean).length >= 3 && w.length >= 16;
 }
 
 async function wordKey(word: string, salt: Uint8Array): Promise<Uint8Array> {
@@ -389,7 +390,7 @@ function lockSalt(value: number): Uint8Array {
 }
 
 export async function lockGift(g: GiftPayload, word: string): Promise<string> {
-  if (!wordStrongEnough(word)) throw new Error('Use at least two words, like "blue pancake".');
+  if (!wordStrongEnough(word)) throw new Error('Use at least three words, like "otter maple comet violin".');
   const k = await wordKey(word, lockSalt(g.value));
   const secret = g.secret.map((b, i) => b ^ k[i]);
   return LOCK_PREFIX + encodeGift({ ...g, secret });

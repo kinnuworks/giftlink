@@ -16,7 +16,7 @@ Buying for someone together? Pick **Group gift**: friends get a chip-in link and
 
 No Nimiq Pay at hand? [See what a friend receives](https://giftlink-beige.vercel.app/demo).
 
-A gift link works like cash: whoever has it can claim it. Posting in a group chat? Turn on **Lock with a secret word**, pick two words, and tell them separately.
+A gift link works like cash: whoever has it can claim it. Posting in a group chat? Turn on **Lock with a secret word**: Giftlink picks four random words, and you tell them separately.
 
 ---
 

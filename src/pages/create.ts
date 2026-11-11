@@ -1,5 +1,6 @@
 import { renderSVG } from 'uqr';
 import { formatNim, LUNA, OCCASIONS, getTransaction, txUrl, wordStrongEnough } from '../chain';
+import { randomWords } from '../words';
 import { createGift, type CreatedGift } from '../gifts';
 import { Cancelled, getWallet } from '../wallet';
 import { busy, copy, errorBox, h, link, mount, share } from '../ui';
@@ -121,11 +122,18 @@ export async function createPage() {
 
   // Optional secret word: the link alone can't claim the gift.
   const lockSwitch = h('input', { type: 'checkbox', class: 'switch', id: 'lock', 'aria-describedby': 'lock-hint' });
-  const word = h('input', { type: 'text', maxLength: 40, placeholder: 'Two words, like "blue pancake"', class: 'field', autocomplete: 'off', 'aria-label': 'Secret word' });
-  const wordRow = h('div', { class: 'group-extra', hidden: true }, word, h('p', { class: 'hint' }, 'Tell them the word in person or in another chat. Without it, the link alone can’t claim the gift.'));
+  const word = h('input', { type: 'text', maxLength: 60, placeholder: 'Four words, like "otter maple comet violin"', class: 'field t-mono', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Secret words' });
+  const reroll = h('button', { type: 'button', class: 'btn btn-ghost btn-sm' }, 'New words');
+  reroll.addEventListener('click', () => (word.value = randomWords()));
+  const wordRow = h(
+    'div',
+    { class: 'group-extra', hidden: true },
+    h('div', { style: 'display:flex;gap:8px;align-items:center' }, word, reroll),
+    h('p', { class: 'hint' }, 'Giftlink picked four random words. Tell them in person or in another chat. Without them, the link alone can’t claim the gift.'),
+  );
   lockSwitch.addEventListener('change', () => {
     wordRow.hidden = !lockSwitch.checked;
-    if (lockSwitch.checked) word.focus();
+    if (lockSwitch.checked && !word.value) word.value = randomWords();
   });
 
   const errorSlot = h('div');
@@ -154,7 +162,7 @@ export async function createPage() {
           return;
         }
         if (lockSwitch.checked && !wordStrongEnough(word.value)) {
-          errorSlot.append(errorBox('Use at least two words for the secret, like "blue pancake". Short words are easy to guess.'));
+          errorSlot.append(errorBox('Use at least three words (or tap New words). Short secrets are easy to guess.'));
           return;
         }
         const done = busy(button, 'Check your wallet…');
