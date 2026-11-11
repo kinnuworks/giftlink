@@ -5,6 +5,7 @@ import { sentPage } from './pages/sent';
 import { vouchersPage } from './pages/vouchers';
 import { demoPage } from './pages/demo';
 import { chipInPage } from './pages/chipin';
+import { thumbPage } from './pages/thumb';
 import { errorBox, h, mount } from './ui';
 import { header } from './pages/shell';
 import { loadNimiq } from './nimiq';
@@ -28,6 +29,7 @@ async function route() {
       return await claimPage(hash);
     }
     if (path === '/demo') return demoPage();
+    if (path === '/thumb') return thumbPage();
     if (path === '/j') return hash ? await chipInPage(hash) : createPage();
     if (path === '/sent') return await sentPage();
     if (path.startsWith('/vouchers')) return await vouchersPage(path.split('/')[2]);

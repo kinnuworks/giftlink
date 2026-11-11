@@ -242,3 +242,4 @@ details.more summary::-webkit-details-marker { display: none; }
 .word-form { display: grid; gap: 10px; margin-top: 4px; }
 .row-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .switch-row .label__hint { font-size: 13px; line-height: 1.4; }
+.thumb { min-height: 100vh; display: grid; place-items: center; padding: 28px; background: var(--wallpaper-soft); } .thumb .gcard { width: 100%; max-width: 440px; }
