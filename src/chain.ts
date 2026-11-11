@@ -310,7 +310,13 @@ export const addrUrl = (address: string) => `${EXPLORER}${address.replace(/\s/g,
 // A locked link carries the gift key XOR-ed with a key stretched from a secret word
 // (PBKDF2-SHA256). Without the word the link alone can't claim the gift.
 export const LOCK_PREFIX = 'L.';
-const LOCK_ITERATIONS = 150_000;
+const LOCK_ITERATIONS = 600_000;
+
+// Two or more words, or a long single word: short words are easy to guess offline.
+export function wordStrongEnough(word: string): boolean {
+  const w = word.trim();
+  return w.split(/\s+/).filter(Boolean).length >= 2 ? w.length >= 8 : w.length >= 12;
+}
 
 async function wordKey(word: string, salt: Uint8Array): Promise<Uint8Array> {
   const norm = word.trim().toLowerCase().normalize('NFKC');
@@ -327,7 +333,7 @@ function lockSalt(value: number): Uint8Array {
 }
 
 export async function lockGift(g: GiftPayload, word: string): Promise<string> {
-  if (!word.trim()) throw new Error('Pick a secret word.');
+  if (!wordStrongEnough(word)) throw new Error('Use at least two words, like "blue pancake".');
   const k = await wordKey(word, lockSalt(g.value));
   const secret = g.secret.map((b, i) => b ^ k[i]);
   return LOCK_PREFIX + encodeGift({ ...g, secret });

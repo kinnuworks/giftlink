@@ -82,13 +82,14 @@ import { lockGift, unlockGift, isLocked, encodeChipIn, decodeChipIn, decodeGift 
 describe('secret word lock and chip-in links', () => {
   it('locks a gift so only the right word restores the key', async () => {
     const secret = randomSecret();
-    const enc = await lockGift({ secret, value: 500_000, message: 'hi', theme: 6 }, 'Pancake');
+    const enc = await lockGift({ secret, value: 500_000, message: 'hi', theme: 6 }, 'Blue Pancake');
     expect(isLocked(enc)).toBe(true);
-    const right = await unlockGift(enc, '  pancake ');
+    const right = await unlockGift(enc, '  blue pancake ');
     expect(Array.from(right.secret)).toEqual(Array.from(secret));
     const wrong = await unlockGift(enc, 'waffle');
     expect(Array.from(wrong.secret)).not.toEqual(Array.from(secret));
     expect(dg(enc.slice(2)).value).toBe(500_000);
+    await expect(lockGift({ secret, value: 1, message: '', theme: 0 }, 'cake')).rejects.toThrow(/two words/);
   });
 
   it('round-trips a chip-in link without any key in it', () => {

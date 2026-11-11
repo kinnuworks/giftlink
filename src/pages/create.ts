@@ -1,5 +1,5 @@
 import { renderSVG } from 'uqr';
-import { formatNim, LUNA, OCCASIONS, getTransaction, txUrl } from '../chain';
+import { formatNim, LUNA, OCCASIONS, getTransaction, txUrl, wordStrongEnough } from '../chain';
 import { createGift, type CreatedGift } from '../gifts';
 import { Cancelled, getWallet } from '../wallet';
 import { busy, copy, errorBox, h, link, mount, share } from '../ui';
@@ -121,7 +121,7 @@ export async function createPage() {
 
   // Optional secret word: the link alone can't claim the gift.
   const lockSwitch = h('input', { type: 'checkbox', class: 'switch', id: 'lock', 'aria-describedby': 'lock-hint' });
-  const word = h('input', { type: 'text', maxLength: 40, placeholder: 'Secret word, like "pancake"', class: 'field', autocomplete: 'off', 'aria-label': 'Secret word' });
+  const word = h('input', { type: 'text', maxLength: 40, placeholder: 'Two words, like "blue pancake"', class: 'field', autocomplete: 'off', 'aria-label': 'Secret word' });
   const wordRow = h('div', { class: 'group-extra', hidden: true }, word, h('p', { class: 'hint' }, 'Tell them the word in person or in another chat. Without it, the link alone can’t claim the gift.'));
   lockSwitch.addEventListener('change', () => {
     wordRow.hidden = !lockSwitch.checked;
@@ -153,8 +153,8 @@ export async function createPage() {
           errorSlot.append(errorBox('Pick an amount of at least 0.01 NIM.'));
           return;
         }
-        if (lockSwitch.checked && !word.value.trim()) {
-          errorSlot.append(errorBox('Type a secret word, or turn the lock off.'));
+        if (lockSwitch.checked && !wordStrongEnough(word.value)) {
+          errorSlot.append(errorBox('Use at least two words for the secret, like "blue pancake". Short words are easy to guess.'));
           return;
         }
         const done = busy(button, 'Check your wallet…');
