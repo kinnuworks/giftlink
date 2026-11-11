@@ -12,3 +12,5 @@ dist/
 .env*
 .claude/
 .deploy/
+output/
+.testnet-sender.key

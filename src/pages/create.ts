@@ -3,26 +3,38 @@ import { formatNim, LUNA, OCCASIONS, getTransaction, txUrl } from '../chain';
 import { createGift, type CreatedGift } from '../gifts';
 import { Cancelled, getWallet } from '../wallet';
 import { busy, copy, errorBox, h, link, mount, share } from '../ui';
+import { art, giftCard, icon, trust } from '../card';
 import { header, openInPayUrl } from './shell';
 
-const AMOUNTS = [10, 25, 50, 100];
+const AMOUNTS = [5, 10, 25, 100];
 
 export async function createPage() {
-  // Render at once; swap in the wallet button when the wallet bridge answers.
-  const walletSlot = h('div', {}, h('button', { class: 'btn primary big', disabled: true }, 'Connecting to your wallet…'));
   let amount = 25;
   let theme: number = OCCASIONS[0].theme;
+
+  const previewSlot = h('div', { class: 'preview' });
+  const message = h('input', {
+    type: 'text',
+    maxLength: 80,
+    placeholder: 'Add a note, like "Happy birthday, Ada"',
+    'aria-label': 'Note',
+    class: 'field',
+    id: 'note',
+  });
+  const renderPreview = () =>
+    previewSlot.replaceChildren(giftCard({ value: Math.round(amount * LUNA), theme, message: message.value.trim() || undefined }));
+  message.addEventListener('input', renderPreview);
 
   const custom = h('input', {
     type: 'number',
     inputmode: 'decimal',
-    min: '1',
+    min: '0.01',
     step: 'any',
     placeholder: 'Other',
-    class: 'amount-input',
+    class: 'field field--amount',
     'aria-label': 'Other amount in NIM',
   });
-  const amountChips = h('div', { class: 'chips', role: 'radiogroup', 'aria-label': 'Amount' });
+  const amountChips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Amount' });
   const renderAmounts = () => {
     amountChips.replaceChildren(
       ...AMOUNTS.map((a) =>
@@ -30,17 +42,16 @@ export async function createPage() {
           'button',
           {
             type: 'button',
-            class: `chip ${a === amount && !custom.value ? 'on' : ''}`,
-            role: 'radio',
-            'aria-checked': String(a === amount && !custom.value),
+            class: 'chip chip--lg',
+            'aria-pressed': String(a === amount && !custom.value),
             onClick: () => {
               amount = a;
               custom.value = '';
-              renderAmounts();
-              updateButton();
+              update();
             },
           },
-          `${a} NIM`,
+          h('span', { class: 't-mono' }, String(a)),
+          ' NIM',
         ),
       ),
       custom,
@@ -51,46 +62,50 @@ export async function createPage() {
     if (v > 0) amount = v;
     renderAmounts();
     custom.focus();
+    renderPreview();
     updateButton();
   });
 
-  const occasionChips = h('div', { class: 'chips', role: 'radiogroup', 'aria-label': 'Occasion' });
+  const occasionTiles = h('div', { class: 'occasions', role: 'group', 'aria-label': 'Occasion' });
   const renderOccasions = () =>
-    occasionChips.replaceChildren(
+    occasionTiles.replaceChildren(
       ...OCCASIONS.map((o) =>
         h(
           'button',
           {
             type: 'button',
-            class: `chip ${o.theme === theme ? 'on' : ''}`,
-            role: 'radio',
-            'aria-checked': String(o.theme === theme),
+            class: 'occ',
+            'data-occ': o.id,
+            'aria-pressed': String(o.theme === theme),
             onClick: () => {
               theme = o.theme;
               renderOccasions();
+              renderPreview();
             },
           },
-          `${o.emoji} ${o.label}`,
+          art(o.id, 'occ__art'),
+          h('span', {}, o.label),
         ),
       ),
     );
 
-  const message = h('textarea', {
-    rows: 2,
-    maxLength: 120,
-    placeholder: 'Add a note (optional)',
-    'aria-label': 'Note',
-  });
   const errorSlot = h('div');
-  const button = h('button', { class: 'btn primary big', type: 'submit' });
+  const button = h('button', { class: 'btn btn-candy btn-lg btn-block', type: 'submit' });
   const updateButton = () => {
-    button.textContent = `Create gift link · ${formatNim(Math.round(amount * LUNA))} NIM`;
+    button.replaceChildren('Create gift link', h('span', { class: 'sep' }, '·'), h('span', { class: 't-mono' }, `${formatNim(Math.round(amount * LUNA))} NIM`));
   };
+  const update = () => {
+    renderAmounts();
+    renderPreview();
+    updateButton();
+  };
+
+  const walletSlot = h('div', {}, h('button', { class: 'btn btn-candy btn-lg btn-block', disabled: true }, 'Connecting to your wallet…'));
 
   const form = h(
     'form',
     {
-      class: 'card',
+      class: 'panel-form',
       onSubmit: async (e: Event) => {
         e.preventDefault();
         errorSlot.replaceChildren();
@@ -105,68 +120,81 @@ export async function createPage() {
           resultPage(gift, theme, message.value.trim());
         } catch (err) {
           done();
+          updateButton();
           if (err instanceof Cancelled) return;
           errorSlot.append(errorBox((err as Error).message));
         }
       },
     },
-    h('label', { class: 'label' }, 'Amount'),
-    amountChips,
-    h('label', { class: 'label' }, 'Occasion'),
-    occasionChips,
-    h('label', { class: 'label' }, 'Note'),
-    message,
-    h('p', { class: 'hint' }, 'The note travels inside the link only. It is never written to the chain.'),
+    h('div', { class: 'field-group' }, h('span', { class: 'label' }, 'Amount'), amountChips),
+    h('div', { class: 'field-group' }, h('span', { class: 'label' }, 'Occasion'), occasionTiles),
+    h(
+      'div',
+      { class: 'field-group' },
+      h('label', { class: 'label', for: 'note' }, 'Note ', h('span', { class: 'label__hint' }, 'travels inside the link, never on the chain')),
+      message,
+    ),
     errorSlot,
     walletSlot,
   );
+
   getWallet().then((wallet) =>
     walletSlot.replaceChildren(
       ...(wallet
-        ? [button, h('p', { class: 'hint center' }, 'First gift only: your wallet asks you to sign once, so you can see and take back your gifts on any device.')]
+        ? [button, h('p', { class: 'hint center' }, 'First gift only: your wallet asks for one signature, so your gifts follow you to any phone.')]
         : [
             h(
               'div',
               { class: 'notice' },
               h('p', {}, 'Sending a gift needs your Nimiq Pay wallet.'),
-              h('a', { class: 'btn primary big', href: openInPayUrl('/') }, 'Open in Nimiq Pay'),
+              h('a', { class: 'btn btn-ink btn-lg btn-block', href: openInPayUrl('/') }, icon('wallet'), 'Open in Nimiq Pay'),
             ),
           ]),
     ),
   );
 
-  renderAmounts();
+  update();
   renderOccasions();
-  updateButton();
 
   mount(
     header('send'),
     h(
       'main',
       { class: 'page' },
-      h('h1', {}, 'Gift NIM with a link'),
-      h('p', { class: 'lead' }, 'Pick an amount and send the link in any chat. Whoever opens it gets the NIM in their own wallet.'),
+      h(
+        'section',
+        { class: 'intro' },
+        h('span', { class: 'eyebrow' }, h('span', { class: 'dot' }), 'For birthdays, thanks and first NIM'),
+        h('h1', {}, 'Gift NIM ', h('span', { class: 'hl' }, 'with a link'), '.'),
+        h('p', { class: 'lead' }, 'Pick an amount and send the link in any chat. Whoever opens it claims the NIM into their own wallet.'),
+      ),
+      previewSlot,
       form,
+      trust('Giftlink never holds your NIM', 'Take back unclaimed gifts', 'No account'),
       h(
         'section',
         { class: 'how' },
-        h('h2', {}, 'How it works'),
+        h('span', { class: 'eyebrow' }, 'How it works'),
         h(
-          'ol',
-          {},
-          h('li', {}, 'You approve one payment. The NIM moves to a new address made just for this gift.'),
-          h('li', {}, 'The key to that address lives only in the link. Giftlink never holds your NIM.'),
-          h('li', {}, 'Your friend opens the link and taps Claim. Not claimed? Take it back from ', link('/sent', 'Sent'), '.'),
+          'div',
+          { class: 'steps' },
+          step('link', 'One payment, one address', 'Your NIM moves to a new address made only for this gift.'),
+          step('shield', 'The key lives in the link', 'Nobody else holds it, Giftlink included.'),
+          step('undo', 'Claimed, or back to you', 'Your friend taps Claim. If they never do, take it back from Sent.'),
         ),
       ),
     ),
   );
 }
 
+function step(ic: string, title: string, text: string) {
+  return h('div', { class: 'tile' }, h('div', { class: 'icon-tile' }, icon(ic)), h('div', {}, h('p', { class: 't-title' }, title), h('p', {}, text)));
+}
+
 export function resultPage(gift: CreatedGift, theme: number, message: string) {
   const occasion = OCCASIONS.find((o) => o.theme === theme) ?? OCCASIONS[0];
-  const shareText = `${occasion.emoji} I sent you ${formatNim(gift.value)} NIM. Open the link in Nimiq Pay to claim it:`;
-  const status = h('p', { class: 'status pending' }, 'Waiting for the network to confirm…');
+  const shareText = `I sent you ${formatNim(gift.value)} NIM (${occasion.label.toLowerCase()}). Open the link in Nimiq Pay to claim it:`;
+  const status = h('p', { class: 'chain-status pending' }, h('span', { class: 'pulse' }), 'Confirming on the Nimiq chain…');
   const qr = h('div', { class: 'qr', html: renderSVG(gift.link, { border: 2 }) });
 
   mount(
@@ -174,21 +202,31 @@ export function resultPage(gift: CreatedGift, theme: number, message: string) {
     h(
       'main',
       { class: 'page' },
-      h('h1', {}, 'Your gift is ready'),
+      h('section', { class: 'intro' }, h('h1', { class: 't-h2' }, 'Your gift is ready.'), h('p', { class: 'lead' }, 'Send the link to the person it’s for. They claim it in Nimiq Pay.')),
+      h('div', { class: 'preview' }, giftCard({ value: gift.value, theme, message: message || undefined })),
+      status,
+      h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => share(shareText, gift.link) }, icon('share'), 'Share the link'),
       h(
         'div',
-        { class: 'gift-card' },
-        h('div', { class: 'gift-emoji', 'aria-hidden': 'true' }, occasion.emoji),
-        h('div', { class: 'gift-amount' }, `${formatNim(gift.value)} NIM`),
-        h('div', { class: 'gift-occasion' }, occasion.label),
-        message ? h('p', { class: 'gift-message' }, `“${message}”`) : null,
+        { class: 'btn-row' },
+        h('button', { class: 'btn btn-outline', onClick: () => copy(gift.link, 'Link copied') }, icon('copy'), 'Copy link'),
+        h(
+          'button',
+          {
+            class: 'btn btn-outline',
+            'aria-expanded': 'false',
+            onClick: (e: Event) => {
+              qr.classList.toggle('open');
+              (e.currentTarget as HTMLButtonElement).setAttribute('aria-expanded', String(qr.classList.contains('open')));
+            },
+          },
+          icon('qr'),
+          'QR code',
+        ),
       ),
-      h('button', { class: 'btn primary big', onClick: () => share(shareText, gift.link) }, 'Share the link'),
-      h('button', { class: 'btn secondary', onClick: () => copy(gift.link, 'Link copied') }, 'Copy link'),
-      h('p', { class: 'hint' }, 'Anyone with this link can claim the gift, like cash. Send it only to the person it’s for.'),
-      status,
-      h('details', { class: 'more' }, h('summary', {}, 'Show QR code'), qr),
-      h('p', { class: 'center' }, link('/', 'Send another gift'), ' · ', link('/sent', 'See your gifts')),
+      qr,
+      h('p', { class: 'notice warn' }, 'Anyone with this link can claim it, like cash.'),
+      h('p', { class: 'center links' }, link('/', 'Send another gift'), h('span', { class: 'sep' }, '·'), link('/sent', 'See your gifts')),
     ),
   );
 
@@ -198,15 +236,15 @@ export function resultPage(gift: CreatedGift, theme: number, message: string) {
       try {
         const tx = await getTransaction(gift.fundingHash);
         if (tx?.blockNumber) {
-          status.className = 'status ok';
-          status.replaceChildren('On the Nimiq chain ✓ ', h('a', { href: txUrl(gift.fundingHash), target: '_blank', rel: 'noopener' }, 'View payment'));
+          status.className = 'chain-status ok';
+          status.replaceChildren(h('span', { class: 'pulse' }), 'On the Nimiq chain. ', h('a', { href: txUrl(gift.fundingHash), target: '_blank', rel: 'noopener' }, 'View payment'));
           return;
         }
       } catch {
         // not yet visible
       }
       if (Date.now() - start < 90_000) setTimeout(poll, 2000);
-      else status.textContent = 'Still confirming. The link already works and will be claimable as soon as the payment lands.';
+      else status.textContent = 'Still confirming. The link already works and becomes claimable as soon as the payment lands.';
     };
     poll();
   } else {

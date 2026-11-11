@@ -35,7 +35,7 @@ export function errorBox(message: string, retry?: () => void) {
     'div',
     { class: 'notice error', role: 'alert' },
     h('p', {}, message),
-    retry ? h('button', { class: 'btn secondary', onClick: retry }, 'Try again') : null,
+    retry ? h('button', { class: 'btn btn-sm btn-outline', onClick: retry }, 'Try again') : null,
   );
 }
 

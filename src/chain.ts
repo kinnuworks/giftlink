@@ -30,7 +30,7 @@ export const OCCASIONS = [
   { id: 'birthday', label: 'Birthday', theme: 6, emoji: '🎂' },
   { id: 'thanks', label: 'Thank you', theme: 5, emoji: '🙏' },
   { id: 'holiday', label: 'Holidays', theme: 2, emoji: '🎄' },
-  { id: 'newyear', label: 'Lunar New Year', theme: 3, emoji: '🧧' },
+  { id: 'newyear', label: 'New Year', theme: 3, emoji: '🧧' },
   { id: 'gift', label: 'Just because', theme: 1, emoji: '🎁' },
 ] as const;
 export type Occasion = (typeof OCCASIONS)[number];

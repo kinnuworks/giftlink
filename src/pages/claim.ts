@@ -24,6 +24,7 @@ import { Cancelled, call, getWallet, isStaker, myAddress } from '../wallet';
 import { busy, errorBox, h, link, mount, spinner } from '../ui';
 import { header, openInPayUrl } from './shell';
 import { pickValidator, type Validator } from '../validators';
+import { art as artFor, giftCard as card, icon, trust } from '../card';
 
 export async function claimPage(encoded: string) {
   mount(header('claim'), h('main', { class: 'page' }, spinner('Opening your gift…')));
@@ -65,31 +66,7 @@ export async function claimPage(encoded: string) {
 }
 
 function giftCard(gift: GiftPayload, value: number, from?: string, funding?: ChainTx) {
-  const occasion = occasionByTheme(gift.theme);
-  return h(
-    'div',
-    { class: 'gift-card' },
-    h('div', { class: 'gift-emoji', 'aria-hidden': 'true' }, occasion.emoji),
-    h('div', { class: 'gift-amount' }, `${formatNim(value)} NIM`),
-    h('div', { class: 'gift-occasion' }, occasion.label),
-    gift.message ? h('p', { class: 'gift-message' }, `“${gift.message}”`) : null,
-    from
-      ? h(
-          'p',
-          { class: 'gift-from' },
-          'From ',
-          h('a', { href: addrUrl(from), target: '_blank', rel: 'noopener' }, shortAddr(from)),
-        )
-      : null,
-    funding
-      ? h(
-          'p',
-          { class: 'verified' },
-          '✓ Checked on the Nimiq chain · ',
-          h('a', { href: txUrl(funding.hash), target: '_blank', rel: 'noopener' }, 'payment'),
-        )
-      : null,
-  );
+  return card({ value, theme: gift.theme, message: gift.message || undefined, from, fundingHash: funding?.hash });
 }
 
 function render(
@@ -106,9 +83,9 @@ function render(
       h(
         'main',
         { class: 'page' },
-        h('h1', {}, 'This gift hasn’t arrived yet'),
+        h('section', { class: 'intro' }, h('h1', { class: 't-h2' }, 'This gift hasn’t arrived yet.')),
         h('p', { class: 'lead' }, 'The sender’s payment is not on the Nimiq chain yet. If they just sent it, wait a moment and try again.'),
-        h('button', { class: 'btn primary big', onClick: () => claimPage(encoded) }, 'Check again'),
+        h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => claimPage(encoded) }, 'Check again'),
       ),
     );
   }
@@ -121,17 +98,17 @@ function render(
       h(
         'main',
         { class: 'page' },
-        h('h1', {}, title),
-        giftCard(gift, state.claim.value, state.funding?.from, state.funding),
+        h('section', { class: 'intro' }, h('h1', { class: 't-h2' }, title + '.')),
+        h('div', { class: 'preview is-spent' }, giftCard(gift, state.claim.value, state.funding?.from, state.funding)),
         h(
           'p',
-          { class: 'status ok' },
+          { class: 'claimed-line' },
           `Claimed ${new Date(state.claim.timestamp).toLocaleString()} by `,
           h('a', { href: addrUrl(state.claimedBy), target: '_blank', rel: 'noopener' }, shortAddr(state.claimedBy)),
           ' · ',
           h('a', { href: txUrl(state.claim.hash), target: '_blank', rel: 'noopener' }, 'transaction'),
         ),
-        h('p', { class: 'center' }, link('/', 'Send a gift of your own')),
+        link('/', 'Send a gift of your own', 'btn btn-candy btn-lg btn-block'),
       ),
     );
   }
@@ -144,11 +121,11 @@ function render(
   const page = h(
     'main',
     { class: 'page' },
-    h('h1', {}, 'You got a gift'),
-    giftCard(gift, value, from, state.funding),
+    h('section', { class: 'intro' }, h('span', { class: 'eyebrow' }, h('span', { class: 'dot' }), 'Someone sent you NIM'), h('h1', {}, 'You got ', h('span', { class: 'hl' }, 'a gift'), '.')),
+    h('div', { class: 'preview is-new' }, giftCard(gift, value, from, state.funding)),
     errorSlot,
     actions,
-    h('p', { class: 'hint center' }, 'Giftlink never holds the NIM. The gift sits at its own address until you claim it.'),
+    trust('Checked on the Nimiq chain', 'Giftlink never holds the NIM'),
   );
   mount(header('claim'), page);
 
@@ -159,7 +136,7 @@ function render(
   };
 
   if (inPay && me) {
-    const claimBtn = h('button', { class: 'btn primary big' }, `Claim ${formatNim(value)} NIM`);
+    const claimBtn = h('button', { class: 'btn btn-candy btn-lg btn-block' }, icon('wallet'), `Claim ${formatNim(value)} NIM`);
     claimBtn.addEventListener('click', async () => {
       errorSlot.replaceChildren();
       const done = busy(claimBtn, 'Claiming…');
@@ -178,8 +155,8 @@ function render(
     addStakeOption(actions, errorSlot, gift, key, value, me, fail);
   } else {
     actions.append(
-      h('a', { class: 'btn primary big', href: openInPayUrl('/c', encoded) }, 'Open in Nimiq Pay to claim'),
-      h('a', { class: 'btn secondary', href: hubLink(encoded), target: '_blank', rel: 'noopener' }, 'Claim in the Nimiq web wallet'),
+      h('a', { class: 'btn btn-candy btn-lg btn-block', href: openInPayUrl('/c', encoded) }, 'Open in Nimiq Pay to claim'),
+      h('a', { class: 'btn btn-outline btn-block', href: hubLink(encoded), target: '_blank', rel: 'noopener' }, 'Claim in the Nimiq web wallet'),
       addressClaim(gift, key, value, errorSlot, fail),
       h('p', { class: 'hint' }, 'No Nimiq Pay yet? Install it from your app store, then open this link again.'),
     );
@@ -195,7 +172,7 @@ function addressClaim(
   fail: (e: unknown, done: () => void) => void,
 ) {
   const input = h('input', { type: 'text', placeholder: 'NQ.. your Nimiq address', autocomplete: 'off', spellcheck: false, 'aria-label': 'Your Nimiq address' });
-  const btn = h('button', { class: 'btn secondary', type: 'submit' }, 'Claim to this address');
+  const btn = h('button', { class: 'btn btn-outline btn-block', type: 'submit' }, 'Claim to this address');
   return h(
     'details',
     { class: 'more' },
@@ -244,7 +221,7 @@ async function addStakeOption(
   const staker = await isStaker(me).catch(() => false);
   if (staker) {
     // One step: the gift key adds its NIM straight to your existing stake.
-    const btn = h('button', { class: 'btn secondary' }, 'Claim into my stake');
+    const btn = h('button', { class: 'btn btn-outline btn-block' }, icon('sprout'), 'Claim into my stake');
     btn.addEventListener('click', async () => {
       errorSlot.replaceChildren();
       const done = busy(btn, 'Adding to your stake…');
@@ -269,7 +246,7 @@ async function addStakeOption(
   // New stakers: claim first, then the wallet creates the stake (two confirmations).
   const validator = await pickValidator().catch(() => null);
   if (!validator) return;
-  const btn = h('button', { class: 'btn secondary' }, `Claim and stake with ${validator.name}`);
+  const btn = h('button', { class: 'btn btn-outline btn-block' }, icon('sprout'), `Claim and stake with ${validator.name}`);
   btn.addEventListener('click', async () => {
     errorSlot.replaceChildren();
     const done = busy(btn, 'Claiming…');
@@ -286,7 +263,7 @@ async function addStakeOption(
       fail(e, done);
     }
   });
-  actions.append(btn, h('p', { class: 'hint' }, `Staking earns rewards from the pool (fee ${Math.round(validator.fee * 100)}%). You can unstake later; it takes from 12 hours to a few days.`));
+  actions.append(btn, h('p', { class: 'hint' }, `Staking earns rewards from the pool (fee ${validator.fee > 1 ? validator.fee : Math.round(validator.fee * 100)}%). You can unstake later; it takes from 12 hours to a few days.`));
 }
 
 async function stakeNew(v: Validator, value: number) {
@@ -302,8 +279,8 @@ function successPage(gift: GiftPayload, value: number, to: string, tx: ChainTx, 
     h(
       'main',
       { class: 'page' },
-      h('div', { class: 'success-mark', 'aria-hidden': 'true' }, occasion.emoji),
-      h('h1', {}, staked ? `${formatNim(value)} NIM is now staking` : `${formatNim(value)} NIM is yours`),
+      h('div', { class: 'success-mark' }, artFor(occasion.id)),
+      h('h1', { class: 't-h2 center' }, staked ? `${formatNim(value)} NIM is now staking.` : `${formatNim(value)} NIM is yours.`),
       h(
         'p',
         { class: 'lead' },
@@ -321,8 +298,8 @@ function successPage(gift: GiftPayload, value: number, to: string, tx: ChainTx, 
         h('div', {}, h('span', {}, 'Block'), h('strong', {}, `#${tx.blockNumber}`)),
         h('div', {}, h('span', {}, 'Transaction'), h('a', { href: txUrl(tx.hash), target: '_blank', rel: 'noopener' }, `${tx.hash.slice(0, 10)}…`)),
       ),
-      h('p', { class: 'center' }, 'Want to pass it on?'),
-      link('/', 'Send someone a gift', 'btn primary big'),
+      link('/', 'Pass it on', 'btn btn-candy btn-lg btn-block'),
+      h('p', { class: 'hint center' }, 'Send a gift of your own. It takes one payment.'),
     ),
   );
 }

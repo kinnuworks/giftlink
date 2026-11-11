@@ -13,6 +13,7 @@ import {
 import { Cancelled, getWallet } from '../wallet';
 import { busy, copy, errorBox, h, link, mount, navigate, spinner, timeAgo } from '../ui';
 import { header, openInPayUrl } from './shell';
+import { icon } from '../card';
 
 export async function vouchersPage(id?: string) {
   mount(header('vouchers'), h('main', { class: 'page' }, spinner('Connecting to your wallet…')));
@@ -23,9 +24,9 @@ export async function vouchersPage(id?: string) {
       h(
         'main',
         { class: 'page' },
-        h('h1', {}, 'NIM vouchers for your meetup or shop'),
-        h('p', { class: 'lead' }, 'One payment becomes a sheet of QR vouchers. People scan one and the NIM lands in their wallet. Take back whatever isn’t claimed.'),
-        h('a', { class: 'btn primary big', href: openInPayUrl('/vouchers') }, 'Open in Nimiq Pay'),
+        h('h1', { class: 't-h2' }, 'NIM vouchers for your meetup.'),
+        h('p', { class: 'lead' }, 'One payment becomes a sheet of QR codes. Each one holds NIM. Take back whatever nobody claims.'),
+        h('a', { class: 'btn btn-candy btn-lg btn-block', href: openInPayUrl('/vouchers') }, 'Open in Nimiq Pay'),
       ),
     );
   }
@@ -48,7 +49,7 @@ async function newBatchPage() {
   const label = h('input', { type: 'text', maxLength: 40, placeholder: 'Event name, e.g. Lagos Nimiq meetup', 'aria-label': 'Event name' });
   const total = h('p', { class: 'total' });
   const errorSlot = h('div');
-  const btn = h('button', { class: 'btn primary big', type: 'submit' }, 'Pay and make vouchers');
+  const btn = h('button', { class: 'btn btn-candy btn-lg btn-block', type: 'submit' }, 'Pay and make vouchers');
   const update = () => {
     const c = Math.floor(Number(count.value) || 0);
     const v = Number(each.value) || 0;
@@ -63,12 +64,12 @@ async function newBatchPage() {
     h(
       'main',
       { class: 'page' },
-      h('h1', {}, 'NIM vouchers for your meetup or shop'),
-      h('p', { class: 'lead' }, 'One payment becomes a sheet of QR vouchers. People scan one and the NIM lands in their wallet. Take back whatever isn’t claimed.'),
+      h('h1', { class: 't-h2' }, 'NIM vouchers for your meetup.'),
+      h('p', { class: 'lead' }, 'One payment becomes a sheet of QR codes. Each one holds NIM. Take back whatever nobody claims.'),
       h(
         'form',
         {
-          class: 'card',
+          class: 'panel-form',
           onSubmit: async (e: Event) => {
             e.preventDefault();
             errorSlot.replaceChildren();
@@ -110,13 +111,13 @@ async function newBatchPage() {
                 h(
                   'li',
                   { class: 'gift-row' },
-                  h('div', { class: 'row-emoji', 'aria-hidden': 'true' }, '🎟️'),
+                  h('div', { class: 'icon-tile' }, icon('ticket')),
                   h(
                     'div',
                     { class: 'row-main' },
                     h('div', { class: 'row-title' }, `${b.count} × ${formatNim(b.value)} NIM${b.label ? ' · ' + b.label : ''}`),
                     h('div', { class: 'row-time' }, `Made ${timeAgo(b.createdAt)}`),
-                    link(`/vouchers/${b.index}`, 'Open sheet', 'btn small secondary'),
+                    link(`/vouchers/${b.index}`, 'Open sheet', 'btn btn-sm btn-outline'),
                   ),
                 ),
               ),
@@ -135,15 +136,15 @@ async function batchPage(index: number) {
   } catch (e) {
     return mount(header('vouchers'), h('main', { class: 'page' }, errorBox((e as Error).message, () => batchPage(index))));
   }
-  if (!batch) return mount(header('vouchers'), h('main', { class: 'page' }, errorBox('This voucher sheet was not found for your wallet.'), link('/vouchers', 'Back to vouchers', 'btn secondary')));
+  if (!batch) return mount(header('vouchers'), h('main', { class: 'page' }, errorBox('This voucher sheet was not found for your wallet.'), link('/vouchers', 'Back to vouchers', 'btn btn-outline btn-block')));
 
   const progress = h('p', { class: 'status pending' }, 'Making your vouchers on the Nimiq chain…');
-  mount(header('vouchers'), h('main', { class: 'page' }, h('h1', {}, 'Making vouchers'), progress));
+  mount(header('vouchers'), h('main', { class: 'page' }, h('h1', { class: 't-h2' }, 'Making vouchers.'), progress));
   try {
     await splitBatch(batch, (done, total) => (progress.textContent = `Making your vouchers on the Nimiq chain… ${done} of ${total}`));
   } catch (e) {
-    const cont = h('button', { class: 'btn primary big', onClick: () => batchPage(index) }, 'Continue');
-    return mount(header('vouchers'), h('main', { class: 'page' }, h('h1', {}, 'Almost there'), errorBox((e as Error).message), cont));
+    const cont = h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => batchPage(index) }, 'Continue');
+    return mount(header('vouchers'), h('main', { class: 'page' }, h('h1', { class: 't-h2' }, 'Almost there.'), errorBox((e as Error).message), cont));
   }
   renderSheet(batch);
 }
@@ -159,7 +160,7 @@ async function renderSheet(batch: BatchInfo) {
   const claimed = data.vouchers.filter((v) => v.claimedBy);
   const open = data.vouchers.filter((v) => v.balance > 0);
   const errorSlot = h('div');
-  const reclaim = h('button', { class: 'btn secondary' }, `Take back ${open.length} unclaimed`);
+  const reclaim = h('button', { class: 'btn btn-outline btn-block' }, `Take back ${open.length} unclaimed`);
   reclaim.disabled = open.length === 0 && data.fundingBalance === 0;
   reclaim.addEventListener('click', async () => {
     if (!confirm('Take back every unclaimed voucher? Their QR codes will stop working.')) return;
@@ -181,19 +182,19 @@ async function renderSheet(batch: BatchInfo) {
     h(
       'main',
       { class: 'page wide' },
-      h('h1', {}, title),
+      h('h1', { class: 't-h2' }, title),
       h('p', { class: 'lead' }, `${batch.count} vouchers × ${formatNim(batch.value)} NIM · ${claimed.length} claimed · ${open.length} waiting`),
       h(
         'div',
         { class: 'row-actions' },
-        h('button', { class: 'btn primary', onClick: () => downloadSheet(batch, data.vouchers) }, 'Download sheet (PNG)'),
-        h('button', { class: 'btn secondary', onClick: () => copy(data.vouchers.filter((v) => v.balance > 0).map((v) => v.link).join('\n'), 'All open voucher links copied') }, 'Copy all links'),
+        h('button', { class: 'btn btn-candy', onClick: () => downloadSheet(batch, data.vouchers) }, 'Download sheet (PNG)'),
+        h('button', { class: 'btn btn-outline btn-block', onClick: () => copy(data.vouchers.filter((v) => v.balance > 0).map((v) => v.link).join('\n'), 'All open voucher links copied') }, 'Copy all links'),
         reclaim,
       ),
       errorSlot,
       h('p', { class: 'hint' }, 'To print: download the sheet, or open this page on a computer with your wallet. Anyone holding a voucher can claim it, like cash.'),
       h('div', { class: 'sheet' }, ...data.vouchers.map((v) => voucherCard(batch, v))),
-      link('/vouchers', 'Back to vouchers', 'btn secondary'),
+      link('/vouchers', 'Back to vouchers', 'btn btn-outline btn-block'),
     ),
   );
 }

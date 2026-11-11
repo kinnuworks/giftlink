@@ -3,6 +3,7 @@ import { listSentGifts, takeBack, type SentGift } from '../gifts';
 import { Cancelled, getWallet } from '../wallet';
 import { busy, copy, errorBox, h, link, mount, spinner, timeAgo } from '../ui';
 import { header, openInPayUrl } from './shell';
+import { art } from '../card';
 
 export async function sentPage() {
   mount(header('sent'), h('main', { class: 'page' }, spinner('Connecting to your wallet…')));
@@ -13,13 +14,13 @@ export async function sentPage() {
       h(
         'main',
         { class: 'page' },
-        h('h1', {}, 'Your gifts'),
+        h('h1', { class: 't-h2' }, 'Your gifts.'),
         h('p', { class: 'lead' }, 'Open Giftlink in Nimiq Pay to see the gifts you sent and take back any that weren’t claimed.'),
-        h('a', { class: 'btn primary big', href: openInPayUrl('/sent') }, 'Open in Nimiq Pay'),
+        h('a', { class: 'btn btn-candy btn-lg btn-block', href: openInPayUrl('/sent') }, 'Open in Nimiq Pay'),
       ),
     );
   }
-  mount(header('sent'), h('main', { class: 'page' }, h('h1', {}, 'Your gifts'), spinner('Reading your gifts from the Nimiq chain…')));
+  mount(header('sent'), h('main', { class: 'page' }, h('h1', { class: 't-h2' }, 'Your gifts.'), spinner('Reading your gifts from the Nimiq chain…')));
   let gifts: SentGift[];
   try {
     gifts = await listSentGifts();
@@ -30,13 +31,13 @@ export async function sentPage() {
         h(
           'main',
           { class: 'page' },
-          h('h1', {}, 'Your gifts'),
+          h('h1', { class: 't-h2' }, 'Your gifts.'),
           h('p', { class: 'lead' }, 'Giftlink needs one signature to find your gifts. It doesn’t move any money.'),
-          h('button', { class: 'btn primary big', onClick: () => sentPage() }, 'Find my gifts'),
+          h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => sentPage() }, 'Find my gifts'),
         ),
       );
     }
-    return mount(header('sent'), h('main', { class: 'page' }, h('h1', {}, 'Your gifts'), errorBox((e as Error).message, () => sentPage())));
+    return mount(header('sent'), h('main', { class: 'page' }, h('h1', { class: 't-h2' }, 'Your gifts.'), errorBox((e as Error).message, () => sentPage())));
   }
 
   const waiting = gifts.filter((g) => g.state.kind === 'ready');
@@ -47,17 +48,18 @@ export async function sentPage() {
     h(
       'main',
       { class: 'page' },
-      h('h1', {}, 'Your gifts'),
+      h('h1', { class: 't-h2' }, 'Your gifts.'),
       gifts.length
         ? h(
-            'p',
-            { class: 'lead' },
-            `${gifts.length} sent · ${gifts.filter((g) => g.state.kind === 'claimed' && !g.state.takenBack).length} claimed`,
-            waiting.length ? ` · ${formatNim(totalWaiting)} NIM waiting` : '',
+            'div',
+            { class: 'stats' },
+            stat(String(gifts.length), 'sent'),
+            stat(String(gifts.filter((g) => g.state.kind === 'claimed' && !g.state.takenBack).length), 'claimed'),
+            stat(formatNim(totalWaiting), 'NIM waiting'),
           )
         : h('p', { class: 'lead' }, 'Gifts you send show up here, with who claimed them.'),
       h('ul', { class: 'gift-list' }, ...gifts.map(row)),
-      link('/', gifts.length ? 'Send another gift' : 'Send your first gift', 'btn primary big'),
+      link('/', gifts.length ? 'Send another gift' : 'Send your first gift', 'btn btn-candy btn-lg btn-block'),
       h('p', { class: 'hint center' }, 'This list is rebuilt from the Nimiq chain, so it works on any phone with your wallet.'),
     ),
   );
@@ -71,7 +73,7 @@ function row(g: SentGift) {
 
   if (g.state.kind === 'ready') {
     status.append(h('span', { class: 'pill wait' }, 'Waiting to be claimed'));
-    const back = h('button', { class: 'btn small secondary' }, 'Take back');
+    const back = h('button', { class: 'btn btn-sm btn-outline' }, 'Take back');
     back.addEventListener('click', async () => {
       if (!confirm(`Take back ${formatNim(g.state.kind === 'ready' ? g.state.balance : 0)} NIM? The link will stop working.`)) return;
       errorSlot.replaceChildren();
@@ -89,7 +91,7 @@ function row(g: SentGift) {
         if (!(e instanceof Cancelled)) errorSlot.append(errorBox((e as Error).message));
       }
     });
-    if (g.link) actions.append(h('button', { class: 'btn small secondary', onClick: () => copy(g.link, 'Link copied') }, 'Copy link'));
+    if (g.link) actions.append(h('button', { class: 'btn btn-sm btn-outline', onClick: () => copy(g.link, 'Link copied') }, 'Copy link'));
     actions.append(back);
   } else if (g.state.kind === 'claimed') {
     const s = g.state;
@@ -112,16 +114,20 @@ function row(g: SentGift) {
   return h(
     'li',
     { class: 'gift-row' },
-    h('div', { class: 'row-emoji', 'aria-hidden': 'true' }, occasion.emoji),
+    art(occasion.id, 'row-art'),
     h(
       'div',
       { class: 'row-main' },
       h('div', { class: 'row-title' }, `${formatNim(g.value)} NIM · ${occasion.label}`),
-      g.message ? h('div', { class: 'row-note' }, `“${g.message}”`) : null,
+      g.message ? h('div', { class: 'row-note' }, g.message) : null,
       h('div', { class: 'row-time' }, `Sent ${timeAgo(g.createdAt)}`),
       status,
       actions,
       errorSlot,
     ),
   );
+}
+
+function stat(value: string, label: string) {
+  return h('div', { class: 'stat' }, h('span', { class: 'stat__value t-mono' }, value), h('span', { class: 'stat__label' }, label));
 }
