@@ -1,17 +1,5 @@
-CLAUDE.md
-HACKATHON.md
-STATE.md
-judge.sh
-stranger.sh
-judging/
-SETUP.md
-gitignore-add.txt
 node_modules/
 dist/
 .vercel/
 .env*
-.claude/
 .deploy/
-output/
-.testnet-sender.key
-submission/
