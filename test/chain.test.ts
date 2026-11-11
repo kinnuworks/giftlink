@@ -76,3 +76,27 @@ describe('keys and transactions', () => {
     tx.verify(1, NETWORK_ID);
   });
 });
+
+import { lockGift, unlockGift, isLocked, encodeChipIn, decodeChipIn, decodeGift as dg } from '../src/chain';
+
+describe('secret word lock and chip-in links', () => {
+  it('locks a gift so only the right word restores the key', async () => {
+    const secret = randomSecret();
+    const enc = await lockGift({ secret, value: 500_000, message: 'hi', theme: 6 }, 'Pancake');
+    expect(isLocked(enc)).toBe(true);
+    const right = await unlockGift(enc, '  pancake ');
+    expect(Array.from(right.secret)).toEqual(Array.from(secret));
+    const wrong = await unlockGift(enc, 'waffle');
+    expect(Array.from(wrong.secret)).not.toEqual(Array.from(secret));
+    expect(dg(enc.slice(2)).value).toBe(500_000);
+  });
+
+  it('round-trips a chip-in link without any key in it', () => {
+    const address = keyFromSecret(N, randomSecret()).address;
+    const enc = encodeChipIn({ address, theme: 3, title: "Ada's birthday" });
+    const dec = decodeChipIn(enc);
+    expect(dec.address).toBe(address);
+    expect(dec.title).toBe("Ada's birthday");
+    expect(dec.theme).toBe(3);
+  });
+});

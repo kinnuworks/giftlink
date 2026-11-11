@@ -269,8 +269,8 @@ export async function waitForTx(hash: string, timeoutMs = 60_000): Promise<Chain
 
 export type GiftState =
   | { kind: 'unfunded' }
-  | { kind: 'ready'; balance: number; funding?: ChainTx }
-  | { kind: 'claimed'; funding?: ChainTx; claim: ChainTx; claimedBy: string; takenBack: boolean };
+  | { kind: 'ready'; balance: number; funding?: ChainTx; givers: number }
+  | { kind: 'claimed'; funding?: ChainTx; claim: ChainTx; claimedBy: string; takenBack: boolean; givers: number };
 
 // Reads a gift address and works out what happened to it.
 export async function giftState(address: string, senderHint?: string): Promise<GiftState> {
@@ -278,11 +278,12 @@ export async function giftState(address: string, senderHint?: string): Promise<G
   const incoming = txs.filter((t) => sameAddr(t.to, address)).sort((a, b) => a.blockNumber - b.blockNumber);
   const outgoing = txs.filter((t) => sameAddr(t.from, address)).sort((a, b) => b.blockNumber - a.blockNumber);
   const funding = incoming[0];
-  if (account.balance > 0) return { kind: 'ready', balance: account.balance, funding };
+  const givers = new Set(incoming.map((t) => t.from.replace(/\s/g, ''))).size;
+  if (account.balance > 0) return { kind: 'ready', balance: account.balance, funding, givers };
   if (outgoing.length) {
     const claim = outgoing[0];
     const back = senderHint ? sameAddr(claim.to, senderHint) : !!funding && sameAddr(claim.to, funding.from);
-    return { kind: 'claimed', funding, claim, claimedBy: claim.to, takenBack: back };
+    return { kind: 'claimed', funding, claim, claimedBy: claim.to, takenBack: back, givers };
   }
   return { kind: 'unfunded' };
 }
@@ -304,3 +305,81 @@ export const shortAddr = (a: string) => {
 
 export const txUrl = (hash: string) => `${EXPLORER}${hash}`;
 export const addrUrl = (address: string) => `${EXPLORER}${address.replace(/\s/g, '+')}`;
+
+// ---------- optional secret word lock ----------
+// A locked link carries the gift key XOR-ed with a key stretched from a secret word
+// (PBKDF2-SHA256). Without the word the link alone can't claim the gift.
+export const LOCK_PREFIX = 'L.';
+const LOCK_ITERATIONS = 150_000;
+
+async function wordKey(word: string, salt: Uint8Array): Promise<Uint8Array> {
+  const norm = word.trim().toLowerCase().normalize('NFKC');
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(norm), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations: LOCK_ITERATIONS }, base, 256);
+  return new Uint8Array(bits);
+}
+
+function lockSalt(value: number): Uint8Array {
+  const salt = new Uint8Array(24);
+  salt.set(new TextEncoder().encode('giftlink-lock-v1'), 0);
+  new DataView(salt.buffer).setBigUint64(16, BigInt(value));
+  return salt;
+}
+
+export async function lockGift(g: GiftPayload, word: string): Promise<string> {
+  if (!word.trim()) throw new Error('Pick a secret word.');
+  const k = await wordKey(word, lockSalt(g.value));
+  const secret = g.secret.map((b, i) => b ^ k[i]);
+  return LOCK_PREFIX + encodeGift({ ...g, secret });
+}
+
+export function isLocked(encoded: string): boolean {
+  return decodeURIComponent(encoded).replace(/^#/, '').startsWith(LOCK_PREFIX);
+}
+
+export async function unlockGift(encoded: string, word: string): Promise<GiftPayload> {
+  const g = decodeGift(decodeURIComponent(encoded).replace(/^#/, '').slice(LOCK_PREFIX.length));
+  const k = await wordKey(word, lockSalt(g.value));
+  return { ...g, secret: g.secret.map((b, i) => b ^ k[i]) };
+}
+
+export function decodeLockedPreview(encoded: string): GiftPayload {
+  return decodeGift(decodeURIComponent(encoded).replace(/^#/, '').slice(LOCK_PREFIX.length));
+}
+
+// ---------- group gift (chip-in) links ----------
+// A chip-in link carries only the gift address, occasion and a title: no key.
+export interface ChipIn {
+  address: string;
+  theme: number;
+  title: string;
+}
+
+export function encodeChipIn(c: ChipIn): string {
+  const json = JSON.stringify({ a: c.address.replace(/\s/g, ''), t: c.theme, n: c.title });
+  return toBase64Url(new TextEncoder().encode(json)).replace(/=+$/, '');
+}
+
+export function decodeChipIn(str: string): ChipIn {
+  try {
+    const o = JSON.parse(new TextDecoder().decode(fromBase64Url(decodeURIComponent(str).replace(/^#/, ''))));
+    const raw = String(o.a).toUpperCase();
+    const address = raw.match(/.{1,4}/g)!.join(' ');
+    if (!/^NQ\d\d( [0-9A-Z]{4}){8}$/.test(address)) throw new Error();
+    return { address, theme: Number(o.t) || 1, title: String(o.n ?? '').slice(0, 80) };
+  } catch {
+    throw new Error('This chip-in link is broken. Ask the organiser to copy it again.');
+  }
+}
+
+export const CHIP_MEMO = 'Giftlink chip-in';
+export const GROUP_MEMO = 'Giftlink group';
+
+export function memoText(hex?: string): string {
+  if (!hex) return '';
+  try {
+    return new TextDecoder().decode(Uint8Array.from(hex.match(/../g) || [], (h) => parseInt(h, 16)));
+  } catch {
+    return '';
+  }
+}

@@ -9,6 +9,7 @@ export interface CardOpts {
   message?: string;
   from?: string;
   fundingHash?: string;
+  givers?: number;
   size?: 'lg' | 'md';
 }
 
@@ -32,7 +33,11 @@ export function giftCard(o: CardOpts) {
       ? h(
           'div',
           { class: 'gcard__meta' },
-          o.from ? h('span', {}, 'From ', h('a', { href: addrUrl(o.from), target: '_blank', rel: 'noopener' }, shortAddr(o.from))) : null,
+          o.givers && o.givers > 1
+            ? h('span', {}, `From ${o.givers} people`)
+            : o.from
+              ? h('span', {}, 'From ', h('a', { href: addrUrl(o.from), target: '_blank', rel: 'noopener' }, shortAddr(o.from)))
+              : null,
           o.fundingHash
             ? h(
                 'a',

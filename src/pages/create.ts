@@ -11,6 +11,7 @@ const AMOUNTS = [5, 10, 25, 100];
 export async function createPage() {
   let amount = 25;
   let theme: number = OCCASIONS[0].theme;
+  let group = false;
 
   const previewSlot = h('div', { class: 'preview' });
   const message = h('input', {
@@ -89,10 +90,48 @@ export async function createPage() {
       ),
     );
 
+  // Who pays: just me, or a group gift friends chip into.
+  const title = h('input', { type: 'text', maxLength: 60, placeholder: "What's it for? Like \"Ada's 30th\"", class: 'field', 'aria-label': 'What the group gift is for' });
+  const groupExtra = h('div', { class: 'group-extra', hidden: true }, title, h('p', { class: 'hint' }, 'You pay the first part. Friends get a chip-in link and add NIM to the same gift. Send the gift when everyone is in.'));
+  const modeSeg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Who pays' });
+  const renderMode = () => {
+    modeSeg.replaceChildren(
+      ...[
+        [false, 'Just me'],
+        [true, 'Group gift'],
+      ].map(([g, label]) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            'aria-pressed': String(group === g),
+            onClick: () => {
+              group = g as boolean;
+              groupExtra.hidden = !group;
+              renderMode();
+              updateButton();
+            },
+          },
+          label as string,
+        ),
+      ),
+    );
+  };
+  renderMode();
+
+  // Optional secret word: the link alone can't claim the gift.
+  const lockSwitch = h('input', { type: 'checkbox', class: 'switch', id: 'lock', 'aria-describedby': 'lock-hint' });
+  const word = h('input', { type: 'text', maxLength: 40, placeholder: 'Secret word, like "pancake"', class: 'field', autocomplete: 'off', 'aria-label': 'Secret word' });
+  const wordRow = h('div', { class: 'group-extra', hidden: true }, word, h('p', { class: 'hint' }, 'Tell them the word in person or in another chat. Without it, the link alone can’t claim the gift.'));
+  lockSwitch.addEventListener('change', () => {
+    wordRow.hidden = !lockSwitch.checked;
+    if (lockSwitch.checked) word.focus();
+  });
+
   const errorSlot = h('div');
   const button = h('button', { class: 'btn btn-candy btn-lg btn-block', type: 'submit' });
   const updateButton = () => {
-    button.replaceChildren('Create gift link', h('span', { class: 'sep' }, '·'), h('span', { class: 't-mono' }, `${formatNim(Math.round(amount * LUNA))} NIM`));
+    button.replaceChildren(group ? 'Start group gift' : 'Create gift link', h('span', { class: 'sep' }, '·'), h('span', { class: 't-mono' }, `${formatNim(Math.round(amount * LUNA))} NIM`));
   };
   const update = () => {
     renderAmounts();
@@ -114,10 +153,15 @@ export async function createPage() {
           errorSlot.append(errorBox('Pick an amount of at least 0.01 NIM.'));
           return;
         }
+        if (lockSwitch.checked && !word.value.trim()) {
+          errorSlot.append(errorBox('Type a secret word, or turn the lock off.'));
+          return;
+        }
         const done = busy(button, 'Check your wallet…');
         try {
-          const gift = await createGift(value, theme, message.value.trim());
-          resultPage(gift, theme, message.value.trim());
+          const secretWord = lockSwitch.checked ? word.value.trim() : undefined;
+          const gift = await createGift(value, theme, message.value.trim(), { group, title: title.value.trim(), word: secretWord });
+          resultPage(gift, theme, message.value.trim(), secretWord);
         } catch (err) {
           done();
           updateButton();
@@ -126,6 +170,7 @@ export async function createPage() {
         }
       },
     },
+    h('div', { class: 'field-group' }, h('span', { class: 'label' }, 'Who pays'), modeSeg, groupExtra),
     h('div', { class: 'field-group' }, h('span', { class: 'label' }, 'Amount'), amountChips),
     h('div', { class: 'field-group' }, h('span', { class: 'label' }, 'Occasion'), occasionTiles),
     h(
@@ -133,6 +178,12 @@ export async function createPage() {
       { class: 'field-group' },
       h('label', { class: 'label', for: 'note' }, 'Note ', h('span', { class: 'label__hint' }, 'travels inside the link, never on the chain')),
       message,
+    ),
+    h(
+      'div',
+      { class: 'field-group' },
+      h('label', { class: 'switch-row', for: 'lock' }, h('span', {}, h('span', { class: 'label', style: 'margin:0' }, 'Lock with a secret word'), h('span', { class: 'label__hint', id: 'lock-hint' }, 'Optional, for gifts you send in a group chat')), lockSwitch),
+      wordRow,
     ),
     errorSlot,
     walletSlot,
@@ -192,41 +243,66 @@ function step(ic: string, title: string, text: string) {
   return h('div', { class: 'tile' }, h('div', { class: 'icon-tile' }, icon(ic)), h('div', {}, h('p', { class: 't-title' }, title), h('p', {}, text)));
 }
 
-export function resultPage(gift: CreatedGift, theme: number, message: string) {
+export function resultPage(gift: CreatedGift, theme: number, message: string, word?: string) {
   const occasion = OCCASIONS.find((o) => o.theme === theme) ?? OCCASIONS[0];
   const shareText = `I sent you ${formatNim(gift.value)} NIM (${occasion.label.toLowerCase()}). Open the link in Nimiq Pay to claim it:`;
   const status = h('p', { class: 'chain-status pending' }, h('span', { class: 'pulse' }), 'Confirming on the Nimiq chain…');
   const qr = h('div', { class: 'qr', html: renderSVG(gift.link, { border: 2 }) });
+  const qrToggle = h(
+    'button',
+    {
+      class: 'btn btn-outline',
+      'aria-expanded': 'false',
+      onClick: (e: Event) => {
+        qr.classList.toggle('open');
+        (e.currentTarget as HTMLButtonElement).setAttribute('aria-expanded', String(qr.classList.contains('open')));
+      },
+    },
+    icon('qr'),
+    'QR code',
+  );
+
+  const giftActions = [
+    h('button', { class: `btn ${gift.chipLink ? 'btn-outline' : 'btn-candy'} btn-lg btn-block`, onClick: () => share(shareText, gift.link) }, icon('share'), gift.chipLink ? 'Share the gift link now' : 'Share the link'),
+    h('div', { class: 'btn-row' }, h('button', { class: 'btn btn-outline', onClick: () => copy(gift.link, 'Gift link copied') }, icon('copy'), 'Copy link'), qrToggle),
+    qr,
+  ];
 
   mount(
     header('send'),
     h(
       'main',
       { class: 'page' },
-      h('section', { class: 'intro' }, h('h1', { class: 't-h2' }, 'Your gift is ready.'), h('p', { class: 'lead' }, 'Send the link to the person it’s for. They claim it in Nimiq Pay.')),
+      h(
+        'section',
+        { class: 'intro' },
+        h('h1', { class: 't-h2' }, gift.chipLink ? 'Your group gift is started.' : 'Your gift is ready.'),
+        h('p', { class: 'lead' }, gift.chipLink ? 'Ask friends to chip in. When everyone is in, send the gift link to the person it’s for.' : 'Send the link to the person it’s for. They claim it in Nimiq Pay.'),
+      ),
       h('div', { class: 'preview' }, giftCard({ value: gift.value, theme, message: message || undefined })),
       status,
-      h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => share(shareText, gift.link) }, icon('share'), 'Share the link'),
-      h(
-        'div',
-        { class: 'btn-row' },
-        h('button', { class: 'btn btn-outline', onClick: () => copy(gift.link, 'Link copied') }, icon('copy'), 'Copy link'),
-        h(
-          'button',
-          {
-            class: 'btn btn-outline',
-            'aria-expanded': 'false',
-            onClick: (e: Event) => {
-              qr.classList.toggle('open');
-              (e.currentTarget as HTMLButtonElement).setAttribute('aria-expanded', String(qr.classList.contains('open')));
-            },
-          },
-          icon('qr'),
-          'QR code',
-        ),
-      ),
-      qr,
-      h('p', { class: 'notice warn' }, 'Anyone with this link can claim it, like cash.'),
+      gift.chipLink
+        ? h(
+            'section',
+            { class: 'step-block' },
+            h('span', { class: 'eyebrow' }, h('span', { class: 'dot' }), 'Step 1 · Collect'),
+            h('p', { class: 't-small' }, 'Friends open this link in Nimiq Pay and add NIM. It holds no key, so it can’t be used to claim.'),
+            h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => share(`Chip in for ${occasion.label.toLowerCase()}! Add NIM to our group gift:`, gift.chipLink!) }, icon('share'), 'Share the chip-in link'),
+            h('button', { class: 'btn btn-outline btn-block', onClick: () => copy(gift.chipLink!, 'Chip-in link copied') }, icon('copy'), 'Copy chip-in link'),
+          )
+        : null,
+      gift.chipLink
+        ? h(
+            'section',
+            { class: 'step-block' },
+            h('span', { class: 'eyebrow' }, 'Step 2 · Give'),
+            h('p', { class: 't-small' }, 'The gift link claims everything collected so far. You’ll also find it later under Sent.'),
+            ...giftActions,
+          )
+        : h('div', {}, ...giftActions),
+      word
+        ? h('p', { class: 'notice warn' }, 'Locked with your secret word. Tell them the word separately; the link alone won’t open the gift.')
+        : h('p', { class: 'notice warn' }, 'Anyone with the gift link can claim it, like cash.'),
       h('p', { class: 'center links' }, link('/', 'Send another gift'), h('span', { class: 'sep' }, '·'), link('/sent', 'See your gifts')),
     ),
   );

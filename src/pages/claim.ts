@@ -3,6 +3,11 @@ import {
   buildAddStake,
   buildTransfer,
   decodeGift,
+  decodeLockedPreview,
+  getAccount,
+  getTransactions,
+  isLocked,
+  unlockGift,
   formatNim,
   getBlockNumber,
   giftState,
@@ -29,9 +34,10 @@ import { art as artFor, giftCard as card, icon, trust } from '../card';
 export async function claimPage(encoded: string) {
   mount(header('claim'), h('main', { class: 'page' }, spinner('Opening your gift…')));
 
+  const locked = isLocked(encoded);
   let gift: GiftPayload;
   try {
-    gift = decodeGift(encoded);
+    gift = locked ? ((await wordPage(encoded)) as GiftPayload) : decodeGift(encoded);
   } catch (e) {
     return mount(header('claim'), h('main', { class: 'page' }, errorBox((e as Error).message || 'This gift link is broken.')));
   }
@@ -62,11 +68,64 @@ export async function claimPage(encoded: string) {
 
   const wallet = await walletP;
   const me = wallet ? await myAddress().catch(() => null) : null;
-  render(encoded, gift, key, state, me, !!wallet);
+  currentGivers = state.kind === 'unfunded' ? 0 : state.givers;
+  render(locked ? '' : encoded, gift, key, state, me, !!wallet, encoded);
 }
 
+let currentGivers = 0;
 function giftCard(gift: GiftPayload, value: number, from?: string, funding?: ChainTx) {
-  return card({ value, theme: gift.theme, message: gift.message || undefined, from, fundingHash: funding?.hash });
+  return card({ value, theme: gift.theme, message: gift.message || undefined, from, fundingHash: funding?.hash, givers: currentGivers });
+}
+
+// Locked gifts: ask for the secret word before anything else.
+async function wordPage(encoded: string): Promise<GiftPayload | null> {
+  const preview = decodeLockedPreview(encoded);
+  return new Promise((resolve) => {
+    const input = h('input', { type: 'text', class: 'field', placeholder: 'Secret word', autocomplete: 'off', autocapitalize: 'off', spellcheck: false, 'aria-label': 'Secret word' });
+    const errorSlot = h('div');
+    const btn = h('button', { class: 'btn btn-candy btn-lg btn-block', type: 'submit' }, 'Open gift');
+    mount(
+      header('claim'),
+      h(
+        'main',
+        { class: 'page' },
+        h('section', { class: 'intro' }, h('span', { class: 'eyebrow' }, h('span', { class: 'dot' }), 'Someone sent you NIM'), h('h1', {}, 'You got ', h('span', { class: 'hl' }, 'a gift'), '.')),
+        h('div', { class: 'preview is-new' }, card({ value: preview.value, theme: preview.theme, message: preview.message || undefined })),
+        h(
+          'form',
+          {
+            class: 'panel-form word-form',
+            onSubmit: async (e: Event) => {
+              e.preventDefault();
+              errorSlot.replaceChildren();
+              const done = busy(btn, 'Checking…');
+              try {
+                const g = await unlockGift(encoded, input.value);
+                const N = await loadNimiq();
+                const addr = keyFromSecret(N, g.secret).address;
+                const [acc, txs] = await Promise.all([getAccount(addr), getTransactions(addr, 1).catch(() => [])]);
+                if (acc.balance === 0 && txs.length === 0) {
+                  done();
+                  errorSlot.append(errorBox('That word doesn’t open this gift. Check the spelling with the sender.'));
+                  return;
+                }
+                resolve(g);
+              } catch (err) {
+                done();
+                errorSlot.append(errorBox((err as Error).message));
+              }
+            },
+          },
+          h('label', { class: 'label' }, 'This gift is locked with a secret word'),
+          input,
+          h('p', { class: 'hint' }, 'The sender told you the word separately. Capital letters don’t matter.'),
+          errorSlot,
+          btn,
+        ),
+      ),
+    );
+    input.focus();
+  });
 }
 
 function render(
@@ -76,6 +135,7 @@ function render(
   state: GiftState,
   me: string | null,
   inPay: boolean,
+  rawEncoded = encoded,
 ) {
   if (state.kind === 'unfunded') {
     return mount(
@@ -85,7 +145,7 @@ function render(
         { class: 'page' },
         h('section', { class: 'intro' }, h('h1', { class: 't-h2' }, 'This gift hasn’t arrived yet.')),
         h('p', { class: 'lead' }, 'The sender’s payment is not on the Nimiq chain yet. If they just sent it, wait a moment and try again.'),
-        h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => claimPage(encoded) }, 'Check again'),
+        h('button', { class: 'btn btn-candy btn-lg btn-block', onClick: () => claimPage(rawEncoded) }, 'Check again'),
       ),
     );
   }
@@ -155,8 +215,8 @@ function render(
     addStakeOption(actions, errorSlot, gift, key, value, me, fail);
   } else {
     actions.append(
-      h('a', { class: 'btn btn-candy btn-lg btn-block', href: openInPayUrl('/c', encoded) }, 'Open in Nimiq Pay to claim'),
-      h('a', { class: 'btn btn-outline btn-block', href: hubLink(encoded), target: '_blank', rel: 'noopener' }, 'Claim in the Nimiq web wallet'),
+      h('a', { class: 'btn btn-candy btn-lg btn-block', href: openInPayUrl('/c', rawEncoded) }, 'Open in Nimiq Pay to claim'),
+      ...(encoded ? [h('a', { class: 'btn btn-outline btn-block', href: hubLink(encoded), target: '_blank', rel: 'noopener' }, 'Claim in the Nimiq web wallet')] : []),
       addressClaim(gift, key, value, errorSlot, fail),
       h('p', { class: 'hint' }, 'No Nimiq Pay yet? Install it from your app store, then open this link again.'),
     );

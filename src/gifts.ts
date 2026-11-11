@@ -16,6 +16,11 @@ import {
   type ChainTx,
   type GiftKey,
   type GiftState,
+  lockGift,
+  encodeChipIn,
+  memoText,
+  sameAddr,
+  GROUP_MEMO,
 } from './chain';
 import { loadNimiq } from './nimiq';
 import { call, getWallet, myAddress, unlockRoot } from './wallet';
@@ -27,6 +32,9 @@ export interface LocalGift {
   theme: number;
   createdAt: number;
   fundingHash?: string;
+  group?: boolean;
+  title?: string;
+  word?: string; // secret word, kept only on this device
 }
 
 const listKey = (addr: string) => `giftlink:gifts:${addr.replace(/\s/g, '')}`;
@@ -53,6 +61,12 @@ export async function giftKey(root: Uint8Array, index: number): Promise<GiftKey>
 }
 
 export const giftUrl = (encoded: string) => `${location.origin}/c#${encoded}`;
+export const chipUrl = (encoded: string) => `${location.origin}/j#${encoded}`;
+
+async function linkFor(secret: Uint8Array, value: number, message: string, theme: number, word?: string) {
+  const g = { secret, value, message, theme };
+  return giftUrl(word ? await lockGift(g, word) : encodeGift(g));
+}
 
 // Finds every index this wallet has used, from the chain. Stops after 3 unused in a row.
 export async function scanIndexes(root: Uint8Array, known: number[] = []): Promise<Map<number, ChainTx[]>> {
@@ -79,9 +93,17 @@ export interface CreatedGift {
   address: string;
   fundingHash: string;
   value: number;
+  chipLink?: string;
+  locked: boolean;
 }
 
-export async function createGift(value: number, theme: number, message: string): Promise<CreatedGift> {
+export interface GiftOptions {
+  group?: boolean;
+  title?: string;
+  word?: string;
+}
+
+export async function createGift(value: number, theme: number, message: string, opts: GiftOptions = {}): Promise<CreatedGift> {
   const w = await getWallet();
   if (!w) throw new Error('Open Giftlink in Nimiq Pay to send a gift.');
   const me = await myAddress();
@@ -99,7 +121,7 @@ export async function createGift(value: number, theme: number, message: string):
     w.sendBasicTransactionWithData({
       recipient: key.address,
       value,
-      data: `Giftlink ${occasion.emoji} ${occasion.label}`,
+      data: `${opts.group ? GROUP_MEMO : 'Giftlink'} ${occasion.emoji} ${occasion.label}`,
     }),
   );
   let fundingHash = '';
@@ -109,9 +131,13 @@ export async function createGift(value: number, theme: number, message: string):
     // older hosts may return the hash directly
     fundingHash = /^[0-9a-f]{64}$/i.test(serialized) ? serialized : '';
   }
-  const encoded = encodeGift({ secret: key.secret, value, message, theme });
-  writeLocal(me, [...local, { index, value, message, theme, createdAt: Date.now(), fundingHash }]);
-  return { link: giftUrl(encoded), encoded, address: key.address, fundingHash, value };
+  const word = opts.word?.trim() || undefined;
+  const link = await linkFor(key.secret, value, message, theme, word);
+  const encoded = link.split('#')[1];
+  const title = opts.title?.trim() || '';
+  writeLocal(me, [...local, { index, value, message, theme, createdAt: Date.now(), fundingHash, group: !!opts.group, title, word }]);
+  const chipLink = opts.group ? chipUrl(encodeChipIn({ address: key.address, theme, title })) : undefined;
+  return { link, encoded, address: key.address, fundingHash, value, chipLink, locked: !!word };
 }
 
 export interface SentGift {
@@ -123,6 +149,11 @@ export interface SentGift {
   createdAt: number;
   state: GiftState;
   link: string;
+  group: boolean;
+  title: string;
+  contributors: number;
+  chipLink?: string;
+  locked: boolean;
 }
 
 function themeFromData(txs: ChainTx[]): number {
@@ -154,14 +185,20 @@ export async function listSentGifts(): Promise<SentGift[]> {
     const theme = l?.theme ?? themeFromData(txs);
     const message = l?.message ?? '';
     const createdAt = l?.createdAt ?? (funding?.timestamp || Date.now());
-    const encoded = value > 0 ? encodeGift({ secret: key.secret, value, message, theme }) : '';
-    out.push({ index, address: key.address, value, message, theme, createdAt, state, link: encoded ? giftUrl(encoded) : '' });
+    const group = l?.group ?? txs.some((t) => memoText(t.recipientData || t.senderData).startsWith(GROUP_MEMO));
+    const title = l?.title ?? '';
+    const incoming = txs.filter((t) => sameAddr(t.to, key.address));
+    const contributors = new Set(incoming.map((t) => t.from.replace(/\s/g, ''))).size;
+    const balance = state.kind === 'ready' ? state.balance : value;
+    const link = balance > 0 ? await linkFor(key.secret, balance, message, theme, l?.word) : '';
+    const chipLink = group ? chipUrl(encodeChipIn({ address: key.address, theme, title })) : undefined;
+    out.push({ index, address: key.address, value: Math.max(value, balance), message, theme, createdAt, state, link, group, title, contributors, chipLink, locked: !!l?.word });
   }
   // Recover the local list on a new device.
   if (local.length < out.length) {
     writeLocal(
       me,
-      out.map((g) => ({ index: g.index, value: g.value, message: g.message, theme: g.theme, createdAt: g.createdAt })),
+      out.map((g) => ({ index: g.index, value: g.value, message: g.message, theme: g.theme, createdAt: g.createdAt, group: g.group, title: g.title })),
     );
   }
   return out.sort((a, b) => b.createdAt - a.createdAt);

@@ -91,7 +91,8 @@ function row(g: SentGift) {
         if (!(e instanceof Cancelled)) errorSlot.append(errorBox((e as Error).message));
       }
     });
-    if (g.link) actions.append(h('button', { class: 'btn btn-sm btn-outline', onClick: () => copy(g.link, 'Link copied') }, 'Copy link'));
+    if (g.chipLink) actions.append(h('button', { class: 'btn btn-sm btn-outline', onClick: () => copy(g.chipLink!, 'Chip-in link copied') }, 'Copy chip-in link'));
+    if (g.link) actions.append(h('button', { class: 'btn btn-sm btn-outline', onClick: () => copy(g.link, 'Gift link copied') }, g.chipLink ? 'Copy gift link' : 'Copy link'));
     actions.append(back);
   } else if (g.state.kind === 'claimed') {
     const s = g.state;
@@ -118,7 +119,10 @@ function row(g: SentGift) {
     h(
       'div',
       { class: 'row-main' },
-      h('div', { class: 'row-title' }, `${formatNim(g.value)} NIM · ${occasion.label}`),
+      h('div', { class: 'row-title' }, `${formatNim(g.value)} NIM · ${g.title || occasion.label}`),
+      g.group || g.locked
+        ? h('div', { class: 'row-tags' }, g.group ? h('span', { class: 'pill' }, `Group · ${g.contributors} in`) : null, g.locked ? h('span', { class: 'pill' }, 'Secret word') : null)
+        : null,
       g.message ? h('div', { class: 'row-note' }, g.message) : null,
       h('div', { class: 'row-time' }, `Sent ${timeAgo(g.createdAt)}`),
       status,
